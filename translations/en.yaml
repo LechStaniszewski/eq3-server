@@ -1,0 +1,7 @@
+configuration:
+  cube_host:
+    name: MAX! Cube address
+    description: IPv4 address or host name of the MAX! Cube on your local network.
+  cube_port:
+    name: MAX! Cube port
+    description: TCP port used by the MAX! Cube.

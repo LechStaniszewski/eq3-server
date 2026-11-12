@@ -1,0 +1,188 @@
+import base64
+import unittest
+
+from .maxcube import (
+    CubeClient,
+    CubeError,
+    DAY_ORDER,
+    _encode_day_program,
+    apply_schedule,
+    parse_schedule,
+)
+
+
+class MemoryCubeClient(CubeClient):
+    def __init__(self):
+        super().__init__("192.0.2.1")
+        self.sent = []
+
+    def _send_line(self, line):
+        self.sent.append(line)
+
+    def _wait_for(self, prefix, timeout=None):
+        return b""
+
+
+class CubeMetadataTests(unittest.TestCase):
+    def test_room_and_device_metadata_round_trip(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7, "name": "Office", "address": "010203"}
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "serial": "OEQ165628",
+            "name": "North",
+            "room_id": 7,
+        }
+
+        cube._write_metadata()
+
+        payload = cube.sent[0].split(b",", 1)[1]
+        restored = MemoryCubeClient()
+        restored._parse_metadata(base64.b64decode(payload))
+        self.assertEqual(restored.rooms[7]["name"], "Office")
+        self.assertEqual(restored.devices["19EF41"]["name"], "North")
+        self.assertEqual(restored.devices["19EF41"]["room_id"], 7)
+
+    def test_room_delete_rejects_nonempty_room(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7, "name": "Office", "address": "000000"}
+        cube.devices["19EF41"] = {"address": "19EF41", "room_id": 7}
+        with self.assertRaises(CubeError):
+            cube.delete_room(7)
+        self.assertIn(7, cube.rooms)
+
+
+class CubeStatusTests(unittest.TestCase):
+    def test_status_parses_target_and_marks_unreported_radiator_temperature(self):
+        cube = MemoryCubeClient()
+        cube.devices["19EF41"] = {"address": "19EF41", "type_code": 2}
+        record = bytes.fromhex("19ef410112390f2f000000")
+
+        cube._parse_status(base64.b64encode(bytes([len(record)]) + record))
+
+        status = cube.devices["19EF41"]["status"]
+        self.assertEqual(status["target_temperature"], 23.5)
+        self.assertEqual(status["mode"], "manual")
+        self.assertIsNone(status["current_temperature"])
+
+    def test_status_parses_measured_temperature_when_present(self):
+        cube = MemoryCubeClient()
+        cube.devices["19EF41"] = {"address": "19EF41", "type_code": 3}
+        record = bytes.fromhex("19ef410112390faf00000020")
+
+        cube._parse_status(base64.b64encode(bytes([len(record)]) + record))
+
+        status = cube.devices["19EF41"]["status"]
+        self.assertEqual(status["target_temperature"], 23.5)
+        self.assertEqual(status["current_temperature"], 28.8)
+
+
+class SetpointTests(unittest.TestCase):
+    def test_room_setpoint_adjustment_broadcasts_to_all_room_thermostats(self):
+        cube = MemoryCubeClient()
+        cube.rooms[19] = {"id": 19}
+        cube.devices = {
+            "19EF41": {
+                "address": "19EF41",
+                "type_code": 2,
+                "room_id": 19,
+                "minimum temperature": 4.5,
+                "maximum temperature": 30.5,
+                "status": {"target_temperature": 21.0},
+            },
+            "1A6878": {
+                "address": "1A6878",
+                "type_code": 1,
+                "room_id": 19,
+                "status": {"target_temperature": 21.0},
+            },
+        }
+
+        result = cube.adjust_room_setpoint(19, 0.5)
+
+        self.assertEqual(result["temperature"], 21.5)
+        self.assertEqual(result["thermostats"], ["19EF41", "1A6878"])
+        packet = base64.b64decode(cube.sent[0][2:])
+        self.assertEqual(packet, b"\x00\x04\x40" + b"\x00" * 6 + bytes([19, 0x6B]))
+
+    def test_room_setpoint_adjustment_respects_device_limits(self):
+        cube = MemoryCubeClient()
+        cube.rooms[19] = {"id": 19}
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "room_id": 19,
+            "minimum temperature": 4.5,
+            "maximum temperature": 21.0,
+            "status": {"target_temperature": 21.0},
+        }
+
+        with self.assertRaisesRegex(CubeError, "between 4.5°C and 21°C"):
+            cube.adjust_room_setpoint(19, 0.5)
+        self.assertEqual(cube.sent, [])
+
+    def test_thermostat_adjustment_uses_its_reported_target(self):
+        cube = MemoryCubeClient()
+        cube.rooms[19] = {"id": 19}
+        cube.devices = {
+            "19EF41": {
+                "address": "19EF41",
+                "type_code": 2,
+                "room_id": 19,
+                "status": {"target_temperature": 23.5},
+            },
+            "1A6878": {
+                "address": "1A6878",
+                "type_code": 1,
+                "room_id": 19,
+                "status": {"target_temperature": 23.0},
+            },
+        }
+
+        result = cube.adjust_room_setpoint(19, 0.5, address="1A6878")
+
+        self.assertEqual(result["temperature"], 23.5)
+        packet = base64.b64decode(cube.sent[0][2:])
+        self.assertEqual(packet[-1], 0x6F)
+
+
+class ScheduleTests(unittest.TestCase):
+    def test_program_is_encoded_as_thirteen_words(self):
+        program = _encode_day_program([(6 * 3600, 17.0), (22 * 3600, 21.0)])
+        self.assertEqual(len(program), 26)
+
+    def test_program_rejects_non_half_degree_temperatures(self):
+        with self.assertRaises(CubeError):
+            _encode_day_program([(24 * 3600, 20.25)])
+
+    def test_schedule_rejects_invalid_json_shapes(self):
+        for value in (None, [], {"Mo": None}):
+            with self.subTest(value=value):
+                with self.assertRaises(CubeError):
+                    parse_schedule(value)
+
+    def test_apply_schedule_targets_only_selected_room(self):
+        class FakeCube:
+            rooms = {1: {}, 2: {}}
+            devices = {
+                "111111": {"type_code": 1, "room_id": 1},
+                "222222": {"type_code": 2, "room_id": 2},
+                "333333": {"type_code": 0, "room_id": 1},
+            }
+
+            def __init__(self):
+                self.applied = []
+
+            def set_schedule(self, address, schedule):
+                self.applied.append(address)
+
+        cube = FakeCube()
+        schedule = {day: [(24 * 3600, 18.0)] for day in DAY_ORDER}
+        applied = apply_schedule(cube, {"scope": "room", "room_id": 1}, schedule)
+        self.assertEqual(applied, ["111111"])
+        self.assertEqual(cube.applied, ["111111"])
+
+
+if __name__ == "__main__":
+    unittest.main()

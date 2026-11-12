@@ -1,0 +1,18 @@
+name: "MAX! Cube Manager"
+version: "0.1.0"
+slug: "max_cube_manager"
+description: "Manage MAX! Cube thermostats, rooms, and schedules."
+stage: experimental
+arch:
+  - aarch64
+  - amd64
+init: false
+ingress: true
+ingress_port: 8765
+panel_icon: mdi:radiator
+panel_title: MAX! Cube
+options:
+  cube_port: 62910
+schema:
+  cube_host: str
+  cube_port: port
