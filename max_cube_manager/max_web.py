@@ -13,8 +13,10 @@ from typing import Any, Dict, Sequence
 from urllib.parse import unquote, urlsplit
 
 if __package__:
+    from .cube_api import CUBE_MESSAGE_API_PORT, CubeMessageAPIServer
     from .maxcube import CubeClient, CubeError, discover_cube, parse_schedule
 else:
+    from cube_api import CUBE_MESSAGE_API_PORT, CubeMessageAPIServer
     from maxcube import CubeClient, CubeError, discover_cube, parse_schedule
 
 
@@ -399,6 +401,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ):
         parser.error("Non-loopback bind addresses are only allowed for Home Assistant ingress")
 
+    server = None
+    message_api_server = None
     try:
         cube_host = args.cube_host or discover_cube()[0]
         server = CubeWebServer(
@@ -409,7 +413,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             allow_home_assistant_ingress=args.home_assistant_ingress,
             debug=args.debug,
         )
+        if args.home_assistant_ingress:
+            message_api_server = CubeMessageAPIServer(
+                ("0.0.0.0", CUBE_MESSAGE_API_PORT),
+                cube_host,
+                args.cube_port,
+                server.cube_lock,
+                debug=args.debug,
+            )
     except (CubeError, OSError) as exc:
+        if message_api_server is not None:
+            message_api_server.server_close()
+        if server is not None:
+            server.server_close()
         print(f"ERROR: {exc}")
         return 1
 
@@ -419,11 +435,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         else f"http://{args.bind}:{server.server_port}/"
     )
     print(f"MAX! Cube {cube_host}; web UI at {access}")
+    api_thread = None
     try:
+        if message_api_server is not None:
+            api_thread = threading.Thread(
+                target=message_api_server.serve_forever,
+                name="cube-message-api",
+                daemon=True,
+            )
+            api_thread.start()
+            _LOGGER.info(
+                "Internal Cube message API listening on port %d",
+                CUBE_MESSAGE_API_PORT,
+            )
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping MAX! Cube web server")
     finally:
+        if message_api_server is not None:
+            if api_thread is not None and api_thread.is_alive():
+                message_api_server.shutdown()
+                api_thread.join()
+            message_api_server.server_close()
         server.server_close()
     return 0
 

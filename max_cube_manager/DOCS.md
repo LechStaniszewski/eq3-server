@@ -30,6 +30,31 @@ Debug logging does not include request bodies or raw Cube packets.
 Radiator valves may not report a measured current temperature. In that case the
 interface displays **Not reported**.
 
+## Internal Cube message API
+
+In Home Assistant app mode, an HTTP API listens on port `62910` inside the app
+network. The port is not mapped to the Home Assistant host. Other apps and
+Home Assistant Core can send a single MAX! Cube protocol line:
+
+```http
+POST /api/cube/message
+Content-Type: application/json
+
+{"message":"m:01,block"}
+```
+
+The response contains the first reply line from the Cube:
+
+```json
+{"reply":"A:accepted"}
+```
+
+Send requests to `http://<app-id>:62910/api/cube/message` from the Home
+Assistant internal network. The app ID is shown in the Supervisor app list.
+Messages must be 1–1024 printable ASCII bytes; line breaks are rejected. Only
+trusted Home Assistant apps should be able to access this unauthenticated
+internal endpoint.
+
 ## Troubleshooting
 
 - Confirm the Cube address is correct and reachable from the Home Assistant

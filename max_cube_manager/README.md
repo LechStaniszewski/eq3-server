@@ -38,5 +38,5 @@ python3 -m max_cube_manager.max --discover
 Run the tests from the repository root with:
 
 ```sh
-python3 -m unittest -v max_cube_manager.test_maxcube max_cube_manager.test_max_web max_cube_manager.test_home_assistant
+python3 -m unittest -v max_cube_manager.test_maxcube max_cube_manager.test_max_web max_cube_manager.test_home_assistant max_cube_manager.test_cube_api
 ```

@@ -33,6 +33,20 @@ class CubeError(RuntimeError):
     pass
 
 
+def encode_cube_message(message: str) -> bytes:
+    if not isinstance(message, str):
+        raise ValueError("Cube message must be a string")
+    try:
+        encoded = message.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Cube messages must contain only ASCII characters") from exc
+    if not encoded or len(encoded) > 1024:
+        raise ValueError("Cube messages must contain between 1 and 1024 bytes")
+    if any(byte < 0x20 or byte > 0x7E for byte in encoded):
+        raise ValueError("Cube messages must be a single printable protocol line")
+    return encoded
+
+
 def discover_cube(timeout: float = 2.0) -> Tuple[str, Dict[str, str]]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -394,6 +408,10 @@ class CubeClient:
 
     def _send_line(self, line: bytes) -> None:
         self._send(line + b"\r\n")
+
+    def exchange_message(self, message: str) -> str:
+        self._send_line(encode_cube_message(message))
+        return self._read_line().decode("ascii", errors="replace")
 
     def _wait_for(self, prefix: bytes, timeout: float | None = None) -> bytes:
         deadline = time.monotonic() + (timeout or self.timeout)

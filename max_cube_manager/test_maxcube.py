@@ -1,5 +1,6 @@
 import base64
 import unittest
+from unittest.mock import Mock
 
 from .maxcube import (
     CubeClient,
@@ -51,6 +52,26 @@ class CubeMetadataTests(unittest.TestCase):
         with self.assertRaises(CubeError):
             cube.delete_room(7)
         self.assertIn(7, cube.rooms)
+
+
+class CubeMessageTests(unittest.TestCase):
+    def test_exchange_message_sends_one_crlf_line_and_returns_reply(self):
+        cube = CubeClient("192.0.2.1")
+        cube.sock = Mock()
+        cube._file = Mock()
+        cube._file.readline.return_value = b"A:accepted\r\n"
+
+        reply = cube.exchange_message("m:01,block")
+
+        self.assertEqual(reply, "A:accepted")
+        cube.sock.sendall.assert_called_once_with(b"m:01,block\r\n")
+
+    def test_exchange_message_rejects_line_breaks_and_non_ascii(self):
+        cube = CubeClient("192.0.2.1")
+
+        for message in ("m:01\r\nn:", "é"):
+            with self.subTest(message=message), self.assertRaises(ValueError):
+                cube.exchange_message(message)
 
 
 class CubeStatusTests(unittest.TestCase):
