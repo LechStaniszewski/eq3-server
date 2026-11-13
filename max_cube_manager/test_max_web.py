@@ -20,6 +20,7 @@ class FakeCube:
         self.updates = []
         self.snapshot_count = 0
         self.radio_state = {"duty_cycle": 100, "status": 1, "free_slots": 0, "updated_at": 1}
+        self.rooms = {1: {"id": 1}, 7: {"id": 7}}
         self.devices = {
             "19EF41": {"address": "19EF41", "type_code": 2, "room_id": 7}
         }
@@ -46,6 +47,10 @@ class FakeCube:
 
     def rename_room(self, room_id, name):
         self.updates.append(("room_name", room_id, name))
+        return {"id": room_id, "name": name}
+
+    def create_room(self, room_id, name):
+        self.updates.append(("create_room", room_id, name))
         return {"id": room_id, "name": name}
 
     def adjust_room_setpoint(self, room_id, delta, address=None):
@@ -174,6 +179,22 @@ class WebScheduleTests(unittest.TestCase):
 
         self.assertEqual(result["room"]["name"], "Office")
         self.assertEqual(cube.updates, [("room_name", 7, "Office")])
+
+    def test_room_create_route_uses_first_available_room_id(self):
+        cube = FakeCube()
+        handler = self.make_handler()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            result = handler._route_mutation("/api/rooms", {"name": "Kitchen"})
+
+        self.assertEqual(result["room"], {"id": 2, "name": "Kitchen"})
+        self.assertEqual(cube.updates, [("create_room", 2, "Kitchen")])
+
+    def test_room_create_route_requires_a_name(self):
+        handler = self.make_handler()
+
+        with self.assertRaisesRegex(ValueError, "room name is required"):
+            handler._route_mutation("/api/rooms", {"name": "  "})
 
     def test_room_temperature_route_reports_shared_effect(self):
         cube = FakeCube()
@@ -344,6 +365,8 @@ class IngressFrontendTests(unittest.TestCase):
 
     def test_ui_polls_status_and_waits_after_cube_updates(self):
         self.assertNotIn('id="force-auto-hourly"', PAGE)
+        self.assertIn('id="add-thermostat" class="primary">Add thermostat</button><button id="add-room">Add room', PAGE)
+        self.assertIn('api("/api/rooms",{method:"POST"', PAGE)
         self.assertIn("setInterval(()=>refresh(),STATUS_REFRESH_INTERVAL_SECONDS*1000)", PAGE)
         self.assertIn("setTimeout(resolve,5000)", PAGE)
         self.assertIn(".menu-content>input,.menu-content>select{grid-column:1}", PAGE)

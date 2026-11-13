@@ -94,7 +94,7 @@ button:hover,.tab.active{border-color:var(--accent);color:var(--accent)}button.p
 input,select{background:#101a21;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font:inherit;min-width:0}
 input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
 .panel,.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row input[type=text]{flex:1}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row input[type=text]{flex:1}.room-actions{display:grid;gap:8px}
 .device{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.device-meta{font-size:13px;color:var(--muted);margin:3px 0 9px}.room-devices{display:grid;gap:10px;margin-top:14px}.thermostat-card{padding:12px;border:1px solid var(--line);border-radius:9px}.thermostat-card h3{margin:0 0 4px}
 .room-head,.thermostat-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.menu{position:relative}.menu summary{list-style:none;border:1px solid var(--line);border-radius:8px;background:#21323e;padding:5px 11px;cursor:pointer;font-size:20px;line-height:1.2}.menu summary::-webkit-details-marker{display:none}.menu[open] .menu-content{position:absolute;z-index:5;right:calc(100% + 16px);top:0;width:min(290px,80vw);padding:14px;background:#14212a;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0008;display:grid;gap:10px}.menu-content input{width:100%}.temperature-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}.temperature-label{color:var(--muted)}.setpoint-controls{display:flex;align-items:center;gap:6px}.setpoint-controls button{min-width:38px;padding:5px 10px;font-size:18px}.setpoint-controls button:disabled{opacity:.45;cursor:not-allowed}.thermostat-note{margin-top:5px}.room-setpoint{padding:8px 0;border-top:1px solid var(--line);margin-top:8px}
 .form-row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{display:grid;gap:5px}.field label{font-size:13px;color:var(--muted)}
@@ -114,7 +114,7 @@ input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-of
 <div id="global-status" class="status" role="status" aria-live="polite"></div>
 <section id="devices-view">
  <div class="panel">
-  <div class="room-head"><h2>Thermostats by room</h2><button id="add-thermostat" class="primary">Add thermostat</button></div>
+  <div class="room-head"><h2>Thermostats by room</h2><div class="room-actions"><button id="add-thermostat" class="primary">Add thermostat</button><button id="add-room">Add room</button></div></div>
   <div class="small">To pair, press the thermostat's pairing button after starting.</div>
   <div class="row" style="margin-top:12px"><strong>All thermostats</strong><button id="all-mode-auto" class="mode-button">Auto</button><button id="all-mode-manual" class="mode-button">Manual</button></div>
   <div id="rooms" class="grid"></div>
@@ -174,6 +174,7 @@ async function refresh(reloadSchedule=false){try{state=await api("/api/state");r
 async function refreshAfterUpdate(reloadSchedule=false){setStatus("Update sent; refreshing Cube status in 5 seconds.");await new Promise(resolve=>setTimeout(resolve,5000));return refresh(reloadSchedule)}
 async function mutate(path,method,body){try{setStatus("Working…");const result=await api(path,{method,body:JSON.stringify(body)});if(await refreshAfterUpdate())setStatus(result.message||"Done.")}catch(error){setStatus(error.message,true)}}
 async function addThermostat(){if(!window.confirm("Start thermostat pairing now? Press the thermostat's pairing button when prompted."))return;const control=$("add-thermostat");control.disabled=true;setStatus("Pairing thermostat; press its pairing button now. This can take up to 60 seconds.");try{const result=await api("/api/thermostats/pair",{method:"POST",body:"{}"});if(await refreshAfterUpdate())setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{control.disabled=false}}
+async function addRoom(){const name=window.prompt("Enter a name for the new room");if(name===null)return;if(!name.trim()){setStatus("A room name is required.",true);return}const control=$("add-room");control.disabled=true;setStatus("Creating room…");try{const result=await api("/api/rooms",{method:"POST",body:JSON.stringify({name})});if(await refreshAfterUpdate())setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{control.disabled=false}}
 async function changeSetpoint(roomId,path,delta){if(busyRooms.has(roomId))return;busyRooms.add(roomId);render();setStatus("Sending temperature command to Cube…");try{const result=await api(path,{method:"POST",body:JSON.stringify({delta})});if(await refreshAfterUpdate(true))setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{busyRooms.delete(roomId);render()}}
 async function changeMode(address,mode){return changeModeBatch(`/api/thermostats/${address}/mode`,mode,`thermostat-${address}`,`thermostat ${address}`)}
 async function changeModeBatch(path,mode,key,description){if(busyModes.size)return;busyModes.add(key);render();setStatus(`Sending ${mode} mode command to ${description}…`);try{const result=await api(path,{method:"POST",body:JSON.stringify({mode})});if(await refreshAfterUpdate())setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{busyModes.delete(key);render()}}
@@ -181,6 +182,7 @@ function showTab(name){$("devices-view").classList.toggle("hidden",name!=="devic
 function openSchedule(address){$("target-device").value=address;loadDeviceSchedule(address);showTab("schedule")}
 $("back-to-rooms").addEventListener("click",()=>showTab("devices"));
 $("add-thermostat").addEventListener("click",addThermostat);
+$("add-room").addEventListener("click",addRoom);
 $("all-mode-auto").addEventListener("click",()=>changeModeBatch("/api/thermostats/mode","auto","all","all thermostats"));
 $("all-mode-manual").addEventListener("click",()=>changeModeBatch("/api/thermostats/mode","manual","all","all thermostats"));
 $("refresh").addEventListener("click",()=>refresh(true));
@@ -386,6 +388,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route_mutation(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
         parts = path.strip("/").split("/")
+        if self.command == "POST" and path == "/api/rooms":
+            name = data.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("A room name is required")
+
+            def create_room(cube):
+                room_id = next(
+                    (candidate for candidate in range(1, 256) if candidate not in cube.rooms),
+                    None,
+                )
+                if room_id is None:
+                    raise CubeError("No room IDs are available")
+                return cube.create_room(room_id, name)
+
+            room = self._with_cube(create_room)
+            return {"room": room, "message": f"Room {room['name']} created"}
+
         if self.command == "POST" and len(parts) == 4 and parts[:2] == ["api", "rooms"] and parts[3] == "setpoint":
             room_id = int(parts[2])
             result = self._with_cube(
