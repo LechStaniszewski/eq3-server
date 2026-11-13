@@ -50,6 +50,18 @@ class FakeCube:
         self.updates.append(("pair", room_id))
         return {"address": "19EF41", "room_id": room_id}
 
+    def set_thermostat_mode(self, address, mode):
+        self.updates.append(("thermostat_mode", address, mode))
+        return {"address": address, "mode": mode, "thermostats": [address]}
+
+    def set_room_mode(self, room_id, mode):
+        self.updates.append(("room_mode", room_id, mode))
+        return {"room_id": room_id, "mode": mode, "thermostats": ["19EF41"]}
+
+    def set_all_thermostats_mode(self, mode):
+        self.updates.append(("all_mode", mode))
+        return {"mode": mode, "thermostats": ["19EF41", "1A6878"]}
+
 
 class WebScheduleTests(unittest.TestCase):
     def make_handler(self):
@@ -178,6 +190,42 @@ class WebScheduleTests(unittest.TestCase):
 
         self.assertEqual(result["room_id"], 7)
         self.assertEqual(cube.updates, [("setpoint", 7, -0.5, "19EF41")])
+
+    def test_thermostat_mode_route_sets_one_thermostat(self):
+        cube = FakeCube()
+        handler = self.make_handler()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            result = handler._route_mutation(
+                "/api/thermostats/19EF41/mode",
+                {"mode": "auto"},
+            )
+
+        self.assertEqual(result["thermostats"], ["19EF41"])
+        self.assertIn("auto", result["message"])
+        self.assertEqual(cube.updates, [("thermostat_mode", "19EF41", "auto")])
+
+    def test_room_mode_route_sets_room_thermostats(self):
+        cube = FakeCube()
+        handler = self.make_handler()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            result = handler._route_mutation("/api/rooms/7/mode", {"mode": "manual"})
+
+        self.assertEqual(result["thermostats"], ["19EF41"])
+        self.assertIn("room 7", result["message"])
+        self.assertEqual(cube.updates, [("room_mode", 7, "manual")])
+
+    def test_all_mode_route_sets_every_thermostat(self):
+        cube = FakeCube()
+        handler = self.make_handler()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            result = handler._route_mutation("/api/thermostats/mode", {"mode": "auto"})
+
+        self.assertEqual(result["thermostats"], ["19EF41", "1A6878"])
+        self.assertIn("all 2 thermostat(s)", result["message"])
+        self.assertEqual(cube.updates, [("all_mode", "auto")])
 
     def test_debug_mode_logs_cube_operation_timing(self):
         handler = self.make_handler()

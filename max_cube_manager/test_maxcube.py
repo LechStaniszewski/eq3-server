@@ -150,6 +150,76 @@ class SetpointTests(unittest.TestCase):
 
         self.assertEqual(len(cube.sent), 1)
 
+    def test_thermostat_mode_uses_device_address_and_preserves_target(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7}
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "room_id": 7,
+            "status": {"target_temperature": 23.5},
+        }
+
+        result = cube.set_thermostat_mode("19ef41", "auto")
+
+        self.assertEqual(result, {"mode": "auto", "thermostats": ["19EF41"], "address": "19EF41"})
+        packet = base64.b64decode(cube.sent[0][2:])
+        self.assertEqual(packet, bytes.fromhex("00004000000019EF41") + bytes([7, 47]))
+
+    def test_room_mode_sends_individual_commands_and_preserves_each_target(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7}
+        cube.devices = {
+            "19EF41": {
+                "address": "19EF41",
+                "type_code": 2,
+                "room_id": 7,
+                "status": {"target_temperature": 21.0},
+            },
+            "1A6878": {
+                "address": "1A6878",
+                "type_code": 1,
+                "room_id": 7,
+                "status": {"target_temperature": 23.0},
+            },
+            "1B6878": {
+                "address": "1B6878",
+                "type_code": 1,
+                "room_id": 8,
+                "status": {"target_temperature": 19.0},
+            },
+        }
+
+        result = cube.set_room_mode(7, "manual")
+
+        self.assertEqual(result, {"room_id": 7, "mode": "manual", "thermostats": ["19EF41", "1A6878"]})
+        packets = [base64.b64decode(line[2:]) for line in cube.sent]
+        self.assertEqual([packet[6:9].hex().upper() for packet in packets], ["19EF41", "1A6878"])
+        self.assertEqual([packet[-1] for packet in packets], [0x6A, 0x6E])
+
+    def test_all_thermostats_mode_includes_unassigned_thermostats(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7}
+        cube.devices = {
+            "19EF41": {
+                "address": "19EF41",
+                "type_code": 2,
+                "room_id": 0,
+                "status": {"target_temperature": 20.0},
+            },
+            "1A6878": {
+                "address": "1A6878",
+                "type_code": 1,
+                "room_id": 7,
+                "status": {"target_temperature": 22.0},
+            },
+        }
+
+        result = cube.set_all_thermostats_mode("auto")
+
+        self.assertEqual(result, {"mode": "auto", "thermostats": ["19EF41", "1A6878"]})
+        self.assertEqual(len(cube.sent), 2)
+
     def test_room_setpoint_error_includes_cube_rejection_response(self):
         cube = MemoryCubeClient()
         cube.rooms[19] = {"id": 19}

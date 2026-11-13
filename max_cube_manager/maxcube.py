@@ -626,6 +626,79 @@ class CubeClient:
             "thermostats": [device["address"] for device in thermostats],
         }
 
+    def set_thermostat_mode(self, address: str, mode: str) -> Dict[str, Any]:
+        address = address.strip().upper()
+        result = self._set_thermostat_modes([address], mode)
+        result["address"] = address
+        return result
+
+    def set_room_mode(self, room_id: int, mode: str) -> Dict[str, Any]:
+        room_id = int(room_id)
+        if room_id not in self.rooms:
+            raise CubeError(f"Room {room_id} does not exist")
+        addresses = [
+            str(device["address"])
+            for device in self.devices.values()
+            if device.get("type_code") in {1, 2, 3} and device.get("room_id") == room_id
+        ]
+        return {"room_id": room_id, **self._set_thermostat_modes(addresses, mode)}
+
+    def set_all_thermostats_mode(self, mode: str) -> Dict[str, Any]:
+        addresses = [
+            str(device["address"])
+            for device in self.devices.values()
+            if device.get("type_code") in {1, 2, 3}
+        ]
+        return self._set_thermostat_modes(addresses, mode)
+
+    def _set_thermostat_modes(self, addresses: Sequence[str], mode: str) -> Dict[str, Any]:
+        mode_codes = {"auto": 0, "manual": 1}
+        if not isinstance(mode, str) or mode not in mode_codes:
+            raise CubeError("Thermostat mode must be auto or manual")
+
+        commands = []
+        for raw_address in addresses:
+            address = raw_address.strip().upper()
+            device = self.devices.get(address)
+            if device is None or device.get("type_code") not in {1, 2, 3}:
+                raise CubeError(f"Thermostat {address} does not exist")
+
+            target = device.get("status", {}).get("target_temperature")
+            if not isinstance(target, (int, float)) or not math.isfinite(target) or target <= 0:
+                raise CubeError(f"Cube has not reported a target temperature for thermostat {address}")
+            half_degrees = float(target) * 2
+            if not half_degrees.is_integer() or not 0 < half_degrees <= 63:
+                raise CubeError(f"Thermostat {address} target must use 0.5°C increments")
+
+            room_id = int(device.get("room_id", 0))
+            if room_id not in self.rooms and room_id != 0:
+                raise CubeError(f"Thermostat {address} has unknown room {room_id}")
+            temperature_and_mode = int(half_degrees) | (mode_codes[mode] << 6)
+            packet = (
+                b"\x00\x00\x40"
+                + b"\x00" * 3
+                + _decode_address(address)
+                + bytes([room_id, temperature_and_mode])
+            )
+            commands.append((address, packet, float(target)))
+
+        if not commands:
+            raise CubeError("No thermostats are available for the mode change")
+
+        applied = []
+        for address, packet, _ in commands:
+            try:
+                self._send_radio_command(packet, f"{mode} mode change for thermostat {address}")
+            except CubeError as exc:
+                if applied:
+                    raise CubeError(
+                        f"Mode change partially applied to {', '.join(applied)}; "
+                        f"failed for {address}: {exc}"
+                    ) from exc
+                raise
+            applied.append(address)
+        return {"mode": mode, "thermostats": applied}
+
     def pair_thermostat(self, room_id: int, name: str = "") -> Dict[str, Any]:
         room_id = int(room_id)
         if room_id != 0 and room_id not in self.rooms:
