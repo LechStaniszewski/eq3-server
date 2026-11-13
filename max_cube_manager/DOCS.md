@@ -34,11 +34,12 @@ interface displays **Not reported**.
 ## Home Assistant climate entities
 
 The app's web interface does not itself register devices in Home Assistant.
-Install the companion integration from this repository by copying
-`custom_components/max_cube_manager` into Home Assistant's
-`config/custom_components/max_cube_manager` directory, then restart Home
-Assistant. In **Settings → Devices & services**, add **MAX! Cube Manager** and
-use the app hostname (default: `max_cube_manager`).
+Install the companion integration through HACS by adding
+`https://github.com/LechStaniszewski/eq3-server` as a custom repository of type
+**Integration**. Alternatively, copy `custom_components/max_cube_manager` into
+Home Assistant's `config/custom_components/max_cube_manager` directory. Restart
+Home Assistant, then in **Settings → Devices & services** add
+**MAX! Cube Manager** and use the app hostname (default: `max_cube_manager`).
 
 The integration creates a Home Assistant climate entity for each thermostat
 already paired with the Cube. Newly paired thermostats are discovered
