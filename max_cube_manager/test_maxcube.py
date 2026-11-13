@@ -117,7 +117,7 @@ class CubeStatusTests(unittest.TestCase):
     def test_status_decodes_cube_actual_temperature(self):
         cube = MemoryCubeClient()
         cube.devices["19F5E8"] = {"address": "19F5E8", "type_code": 2}
-        record = bytes.fromhex("19f5e80000003c28000000a9")
+        record = bytes.fromhex("19f5e80000003c2800a9")
 
         cube._parse_status(base64.b64encode(bytes([len(record)]) + record))
 

@@ -372,16 +372,20 @@ class CubeClient:
             device = self.devices.setdefault(address, {"address": address})
             flags = int.from_bytes(record[4:6], "big")
             raw_setpoint = record[7]
+            mode_code = flags & 0x03
             status: Dict[str, Any] = {
-                "mode": MODE_MAP[flags & 0x03],
+                "mode": MODE_MAP[mode_code],
                 "target_temperature": (raw_setpoint & 0x7F) / 2.0,
                 "valve_position": record[6],
                 "current_temperature": None,
             }
-            if record_length >= 12:
-                temperature = record[11]
-                if raw_setpoint & 0x80:
-                    temperature |= 0x100
+            device_type = device.get("type_code")
+            if device_type in {1, 2} and record_length >= 10 and mode_code in {0, 1}:
+                temperature = int.from_bytes(record[8:10], "big")
+                if temperature:
+                    status["current_temperature"] = temperature / 10.0
+            elif device_type == 3 and record_length >= 12:
+                temperature = ((raw_setpoint & 0x80) << 1) | record[11]
                 status["current_temperature"] = temperature / 10.0
             device["status"] = status
             offset = end
