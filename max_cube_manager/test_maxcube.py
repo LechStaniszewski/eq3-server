@@ -177,11 +177,19 @@ class ScheduleTests(unittest.TestCase):
         with self.assertRaises(CubeError):
             _encode_day_program([(24 * 3600, 20.25)])
 
+    def test_program_rejects_non_five_minute_final_time(self):
+        with self.assertRaisesRegex(CubeError, "five-minute increments"):
+            _encode_day_program([(23 * 3600 + 59 * 60, 20.0)])
+
     def test_schedule_rejects_invalid_json_shapes(self):
         for value in (None, [], {"Mo": None}):
             with self.subTest(value=value):
                 with self.assertRaises(CubeError):
                     parse_schedule(value)
+
+    def test_schedule_rejects_times_outside_five_minute_increments(self):
+        with self.assertRaisesRegex(CubeError, "five-minute increments"):
+            parse_schedule({"Mo": [{"time": "06:01", "temperature": 20.0}]})
 
     def test_apply_schedule_targets_only_selected_room(self):
         class FakeCube:

@@ -101,6 +101,8 @@ def _encode_day_program(points: Sequence[Tuple[int, float]]) -> bytes:
         last_seconds = int(last_seconds)
         if last_seconds <= previous or not 0 <= last_seconds <= 24 * 60 * 60:
             raise CubeError("Schedule times must be strictly ascending and within one day")
+        if last_seconds % 300:
+            raise CubeError("Schedule times must be in five-minute increments")
         if index == len(points) - 1:
             last_seconds = 24 * 60 * 60
         previous = last_seconds
@@ -111,8 +113,6 @@ def _encode_day_program(points: Sequence[Tuple[int, float]]) -> bytes:
         if not scaled_temperature.is_integer():
             raise CubeError("Thermostat temperatures must use 0.5°C increments")
         temp_half_degrees = int(scaled_temperature)
-        if last_seconds % 300:
-            raise CubeError("Schedule times must be in five-minute increments")
         word = last_seconds // 300 | (temp_half_degrees << 9)
         encoded.extend(struct.pack("!H", word))
 
@@ -721,6 +721,8 @@ def parse_schedule(data: Mapping[str, Sequence[Mapping[str, Any]]]) -> Dict[str,
                     raise CubeError(f"Invalid schedule time: {time_value!r}") from exc
             else:
                 seconds = int(time_value)
+            if seconds % 300:
+                raise CubeError("Schedule times must be in five-minute increments")
             try:
                 temperature = float(temperature_value)
             except (TypeError, ValueError) as exc:
