@@ -35,5 +35,7 @@ interface displays **Not reported**.
 - Confirm the Cube address is correct and reachable from the Home Assistant
   host.
 - Check the app's log for Cube connection errors.
+- If the page cannot reach the app API, the status beside the title now shows
+  the HTTP status or request error.
 - The app accepts web traffic only from Home Assistant's Supervisor ingress
   proxy. It intentionally does not expose a standalone network port.

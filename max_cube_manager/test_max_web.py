@@ -5,7 +5,7 @@ from contextlib import redirect_stderr
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from .max_web import Handler, main as web_main
+from .max_web import Handler, PAGE, main as web_main
 from .maxcube import CubeError, DAY_ORDER
 
 
@@ -219,6 +219,19 @@ class IngressSecurityTests(unittest.TestCase):
             web_main(["--bind", "0.0.0.0"])
 
         self.assertEqual(error.exception.code, 2)
+
+
+class IngressFrontendTests(unittest.TestCase):
+    def test_api_requests_resolve_under_the_current_ingress_path(self):
+        self.assertIn(
+            'new URL(path.replace(/^\\/+/',
+            PAGE,
+        )
+        self.assertIn("document.baseURI)", PAGE)
+        self.assertIn("fetch(requestUrl", PAGE)
+
+    def test_connection_errors_replace_the_connecting_indicator(self):
+        self.assertIn("Connection failed · ${error.message}", PAGE)
 
 
 if __name__ == "__main__":
