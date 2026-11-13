@@ -321,6 +321,17 @@ class IngressFrontendTests(unittest.TestCase):
     def test_connection_errors_replace_the_connecting_indicator(self):
         self.assertIn("Connection failed · ${error.message}", PAGE)
 
+    def test_mode_controls_use_refreshed_status_and_highlight_active_mode(self):
+        self.assertIn('mode==="auto"?"Auto":"Manual"', PAGE)
+        self.assertIn("function activeMode(devices)", PAGE)
+        self.assertIn("device.status?.mode===mode", PAGE)
+        self.assertIn("activeMode(state.thermostats)", PAGE)
+        self.assertIn("if(await refresh())setStatus(result.message)", PAGE)
+        self.assertIn(
+            ".mode-button.active,.mode-button.active:hover{background:#1769d2",
+            PAGE,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
