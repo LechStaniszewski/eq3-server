@@ -33,6 +33,15 @@ class HomeAssistantAppTests(unittest.TestCase):
             ):
                 build_web_args({"cube_host": "192.0.2.10", "cube_port": port})
 
+    def test_debug_option_enables_detailed_logging(self):
+        args = build_web_args({"cube_host": "192.0.2.10", "debug": True})
+
+        self.assertEqual(args[-1], "--debug")
+
+    def test_rejects_invalid_debug_option(self):
+        with self.assertRaisesRegex(ValueError, "Debug logging"):
+            build_web_args({"cube_host": "192.0.2.10", "debug": "yes"})
+
 
 if __name__ == "__main__":
     unittest.main()

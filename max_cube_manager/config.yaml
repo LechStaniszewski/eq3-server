@@ -1,5 +1,5 @@
 name: "MAX! Cube Manager"
-version: "0.1.0"
+version: "0.1.1"
 slug: "max_cube_manager"
 description: "Manage MAX! Cube thermostats, rooms, and schedules."
 stage: experimental
@@ -13,6 +13,8 @@ panel_icon: mdi:radiator
 panel_title: MAX! Cube
 options:
   cube_port: 62910
+  debug: false
 schema:
   cube_host: str
   cube_port: port
+  debug: bool

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Sequence
 from urllib.parse import unquote, urlsplit
@@ -14,6 +16,9 @@ if __package__:
     from .maxcube import CubeClient, CubeError, discover_cube, parse_schedule
 else:
     from maxcube import CubeClient, CubeError, discover_cube, parse_schedule
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 PAGE = r"""<!doctype html>
@@ -129,11 +134,13 @@ class CubeWebServer(ThreadingHTTPServer):
         cube_host: str,
         cube_port: int,
         allow_home_assistant_ingress: bool = False,
+        debug: bool = False,
     ) -> None:
         super().__init__(address, handler)
         self.cube_host = cube_host
         self.cube_port = cube_port
         self.allow_home_assistant_ingress = allow_home_assistant_ingress
+        self.debug = debug
         self.cube_lock = threading.Lock()
 
 
@@ -213,9 +220,35 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def _with_cube(self, callback):
+        action = f"{self.command} {urlsplit(getattr(self, 'path', '')).path or 'request'}"
+        started = time.monotonic()
+        if self.server.debug:
+            _LOGGER.debug(
+                "Connecting to MAX! Cube %s:%d for %s",
+                self.server.cube_host,
+                self.server.cube_port,
+                action,
+            )
         with self.server.cube_lock:
-            with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
-                return callback(cube)
+            try:
+                with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
+                    result = callback(cube)
+            except (CubeError, OSError):
+                if self.server.debug:
+                    _LOGGER.debug(
+                        "MAX! Cube operation %s failed after %.3f seconds",
+                        action,
+                        time.monotonic() - started,
+                        exc_info=True,
+                    )
+                raise
+        if self.server.debug:
+            _LOGGER.debug(
+                "MAX! Cube operation %s completed in %.3f seconds",
+                action,
+                time.monotonic() - started,
+            )
+        return result
 
     def do_GET(self) -> None:
         if not self._check_origin():
@@ -249,6 +282,13 @@ class Handler(BaseHTTPRequestHandler):
             result = self._route_mutation(path, data)
             self._send_json(200, result)
         except (CubeError, ValueError, KeyError) as exc:
+            if self.server.debug and not isinstance(exc, CubeError):
+                _LOGGER.debug(
+                    "Rejected %s %s: %s",
+                    self.command,
+                    path,
+                    exc,
+                )
             self._send_json(400, {"error": str(exc)})
         except OSError as exc:
             self._send_json(502, {"error": str(exc)})
@@ -318,6 +358,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format_string: str, *args: Any) -> None:
         super().log_message(format_string, *args)
+        if self.server.debug:
+            _LOGGER.debug(
+                "HTTP request details: client=%s method=%s path=%s content_type=%s content_length=%s",
+                self.client_address[0],
+                self.command,
+                urlsplit(self.path).path,
+                self.headers.get("Content-Type", "-"),
+                self.headers.get("Content-Length", "-"),
+            )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -330,11 +379,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--bind", default="127.0.0.1", help="Web bind address")
     parser.add_argument("--port", type=int, default=8765, help="Web server port")
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Log detailed HTTP and MAX! Cube diagnostics",
+    )
+    parser.add_argument(
         "--home-assistant-ingress",
         action="store_true",
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     if args.bind not in {"127.0.0.1", "localhost"} and not (
         args.home_assistant_ingress and args.bind == "0.0.0.0"
@@ -349,6 +407,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cube_host,
             args.cube_port,
             allow_home_assistant_ingress=args.home_assistant_ingress,
+            debug=args.debug,
         )
     except (CubeError, OSError) as exc:
         print(f"ERROR: {exc}")

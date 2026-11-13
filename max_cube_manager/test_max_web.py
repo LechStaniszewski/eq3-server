@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from .max_web import Handler, main as web_main
-from .maxcube import DAY_ORDER
+from .maxcube import CubeError, DAY_ORDER
 
 
 class FakeCube:
@@ -54,6 +54,7 @@ class WebScheduleTests(unittest.TestCase):
             cube_lock=threading.Lock(),
             cube_host="192.0.2.1",
             cube_port=62910,
+            debug=False,
         )
         return handler
 
@@ -137,6 +138,30 @@ class WebScheduleTests(unittest.TestCase):
 
         self.assertEqual(result["room_id"], 7)
         self.assertEqual(cube.updates, [("setpoint", 7, -0.5, "19EF41")])
+
+    def test_debug_mode_logs_cube_operation_timing(self):
+        handler = self.make_handler()
+        handler.server.debug = True
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=FakeCube()):
+            with self.assertLogs("max_cube_manager.max_web", level="DEBUG") as captured:
+                handler._with_cube(lambda cube: None)
+
+        self.assertTrue(any("completed in" in message for message in captured.output))
+
+    def test_debug_mode_logs_cube_operation_errors(self):
+        handler = self.make_handler()
+        handler.server.debug = True
+
+        with patch(
+            "max_cube_manager.max_web.CubeClient",
+            side_effect=CubeError("Cube timeout"),
+        ):
+            with self.assertLogs("max_cube_manager.max_web", level="DEBUG") as captured:
+                with self.assertRaisesRegex(CubeError, "Cube timeout"):
+                    handler._with_cube(lambda cube: None)
+
+        self.assertTrue(any("failed after" in message for message in captured.output))
 
 
 class IngressSecurityTests(unittest.TestCase):

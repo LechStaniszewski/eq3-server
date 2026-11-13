@@ -14,6 +14,8 @@ local testing.
 Before starting the app, set **MAX! Cube address** in its configuration to the
 Cube's IPv4 address or host name. The app uses bridged networking, so it does
 not rely on LAN UDP broadcast discovery. The default Cube TCP port is `62910`.
+Enable **Debug logging** in the app configuration for detailed request and
+Cube-operation diagnostics in the app log.
 See [DOCS.md](./DOCS.md) for setup and troubleshooting.
 
 ## Local web interface

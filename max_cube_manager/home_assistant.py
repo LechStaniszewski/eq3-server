@@ -28,7 +28,11 @@ def build_web_args(options: Dict[str, Any]) -> List[str]:
     if not 1 <= cube_port <= 65535:
         raise ValueError("The MAX! Cube port must be between 1 and 65535")
 
-    return [
+    debug = options.get("debug", False)
+    if not isinstance(debug, bool):
+        raise ValueError("Debug logging must be true or false")
+
+    args = [
         "--cube-host",
         cube_host.strip(),
         "--cube-port",
@@ -39,6 +43,9 @@ def build_web_args(options: Dict[str, Any]) -> List[str]:
         "8765",
         "--home-assistant-ingress",
     ]
+    if debug:
+        args.append("--debug")
+    return args
 
 
 def main() -> int:

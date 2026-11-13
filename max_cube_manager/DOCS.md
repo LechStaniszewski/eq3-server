@@ -12,9 +12,13 @@ the host or require a separate login.
    configuration. The app uses the bridged network and does not rely on UDP
    broadcast discovery.
 3. Keep **MAX! Cube port** at `62910` unless the Cube uses a different port.
-4. Save the configuration, start the app, and open its web interface.
+4. Optionally enable **Debug logging** to include HTTP request metadata and
+   MAX! Cube operation timings and error details in the app log.
+5. Save the configuration, start the app, and open its web interface.
 
 Restart the app after changing its configuration.
+
+Debug logging does not include request bodies or raw Cube packets.
 
 ## Features
 

@@ -5,3 +5,6 @@ configuration:
   cube_port:
     name: MAX! Cube port
     description: TCP port used by the MAX! Cube.
+  debug:
+    name: Debug logging
+    description: Log detailed HTTP request metadata and MAX! Cube operation timings and errors.
