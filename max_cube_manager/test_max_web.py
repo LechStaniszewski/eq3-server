@@ -65,7 +65,7 @@ class WebScheduleTests(unittest.TestCase):
             for day in DAY_ORDER
         }
 
-        with patch("eq3_server.max_web.CubeClient", return_value=cube):
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
             result = handler._route_mutation(
                 "/api/schedules/apply",
                 {"address": "19EF41", "schedule": schedule},
@@ -89,7 +89,7 @@ class WebScheduleTests(unittest.TestCase):
         handler = self.make_handler()
         handler.command = "PATCH"
 
-        with patch("eq3_server.max_web.CubeClient", return_value=cube):
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
             result = handler._route_mutation(
                 "/api/thermostats/19EF41",
                 {"name": "North", "room_id": 7},
@@ -106,7 +106,7 @@ class WebScheduleTests(unittest.TestCase):
         handler = self.make_handler()
         handler.command = "PATCH"
 
-        with patch("eq3_server.max_web.CubeClient", return_value=cube):
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
             result = handler._route_mutation("/api/rooms/7", {"name": "Office"})
 
         self.assertEqual(result["room"]["name"], "Office")
@@ -116,7 +116,7 @@ class WebScheduleTests(unittest.TestCase):
         cube = FakeCube()
         handler = self.make_handler()
 
-        with patch("eq3_server.max_web.CubeClient", return_value=cube):
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
             result = handler._route_mutation(
                 "/api/rooms/7/setpoint",
                 {"delta": 0.5},
@@ -129,7 +129,7 @@ class WebScheduleTests(unittest.TestCase):
         cube = FakeCube()
         handler = self.make_handler()
 
-        with patch("eq3_server.max_web.CubeClient", return_value=cube):
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
             result = handler._route_mutation(
                 "/api/thermostats/19EF41/setpoint",
                 {"delta": -0.5},
