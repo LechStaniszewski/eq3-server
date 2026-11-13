@@ -9,7 +9,7 @@ import logging
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Sequence
+from typing import Any, Callable, Dict, Sequence
 from urllib.parse import unquote, urlsplit
 
 if __package__:
@@ -519,7 +519,10 @@ class Handler(BaseHTTPRequestHandler):
             )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    on_internal_api_ready: Callable[[], None] | None = None,
+) -> int:
     parser = argparse.ArgumentParser(description="Run the MAX! Cube web interface.")
     parser.add_argument(
         "--cube-host",
@@ -610,6 +613,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Internal Cube message API listening on port %d",
                 CUBE_MESSAGE_API_PORT,
             )
+            if on_internal_api_ready is not None:
+                on_internal_api_ready()
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping MAX! Cube web server")

@@ -1,5 +1,5 @@
 name: "MAX! Cube Manager"
-version: "0.1.16"
+version: "0.1.17"
 slug: "max_cube_manager"
 description: "Manage MAX! Cube thermostats, rooms, and schedules."
 stage: experimental
@@ -11,6 +11,8 @@ ingress: true
 ingress_port: 8765
 panel_icon: mdi:radiator
 panel_title: MAX! Cube
+discovery:
+  - max_cube_manager
 options:
   cube_port: 62910
   debug: false

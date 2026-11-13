@@ -38,9 +38,11 @@ Install the companion integration through HACS by adding
 `https://github.com/LechStaniszewski/eq3-server` as a custom repository of type
 **Integration**. Alternatively, copy `custom_components/max_cube_manager` into
 Home Assistant's `config/custom_components/max_cube_manager` directory. Restart
-Home Assistant, then in **Settings → Devices & services** add
-**MAX! Cube Manager** and enter the full app network hostname shown by
-Home Assistant (its App ID with underscores replaced by hyphens).
+Home Assistant and the app. The app announces itself to Home Assistant, which
+offers a setup confirmation under **Settings → Devices & services**. If
+discovery is unavailable, add the integration manually and enter the app's
+internal hostname shown by Home Assistant (its full App ID with underscores
+replaced by hyphens).
 
 The integration creates a Home Assistant climate entity for each thermostat
 already paired with the Cube. Newly paired thermostats are discovered

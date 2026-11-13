@@ -3,14 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 if __package__:
+    from .cube_api import CUBE_MESSAGE_API_PORT
     from .max_web import main as web_main
 else:
+    from cube_api import CUBE_MESSAGE_API_PORT
     from max_web import main as web_main
+
+
+_LOGGER = logging.getLogger(__name__)
+SUPERVISOR_DISCOVERY_URL = "http://supervisor/discovery"
+INTEGRATION_DOMAIN = "max_cube_manager"
+
+
+class SupervisorDiscoveryError(RuntimeError):
+    """Raised when Supervisor rejects an integration discovery announcement."""
 
 
 def build_web_args(options: Dict[str, Any]) -> List[str]:
@@ -64,6 +80,43 @@ def build_web_args(options: Dict[str, Any]) -> List[str]:
     return args
 
 
+def publish_discovery(token: str | None = None, host: str | None = None) -> None:
+    token = token or os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        _LOGGER.warning("Cannot announce the integration: SUPERVISOR_TOKEN is unavailable")
+        return
+
+    try:
+        hostname = host or socket.gethostname()
+        payload = json.dumps({
+            "service": INTEGRATION_DOMAIN,
+            "config": {"host": hostname, "port": CUBE_MESSAGE_API_PORT},
+        }).encode("utf-8")
+        request = Request(
+            SUPERVISOR_DISCOVERY_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            result = json.loads(response.read())
+        if not isinstance(result, dict) or result.get("result") != "ok":
+            message = (
+                result.get("message", "unexpected Supervisor response")
+                if isinstance(result, dict)
+                else "invalid Supervisor response"
+            )
+            raise SupervisorDiscoveryError(str(message))
+    except (OSError, TimeoutError, URLError, json.JSONDecodeError, SupervisorDiscoveryError) as exc:
+        _LOGGER.warning("Could not announce MAX! Cube integration discovery: %s", exc)
+        return
+
+    _LOGGER.info("Announced MAX! Cube integration at %s:%d", hostname, CUBE_MESSAGE_API_PORT)
+
+
 def main() -> int:
     try:
         options = json.loads(Path("/data/options.json").read_text(encoding="utf-8"))
@@ -74,7 +127,7 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    return web_main(args)
+    return web_main(args, on_internal_api_ready=publish_discovery)
 
 
 if __name__ == "__main__":

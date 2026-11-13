@@ -37,7 +37,11 @@ class MaxCubeCoordinator(DataUpdateCoordinator[dict]):
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    api = MaxCubeApi(async_get_clientsession(hass), entry.data["host"])
+    api = MaxCubeApi(
+        async_get_clientsession(hass),
+        entry.data["host"],
+        entry.data.get("port", 62910),
+    )
     coordinator = MaxCubeCoordinator(hass, api, entry.data["serial"])
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

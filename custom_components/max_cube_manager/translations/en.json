@@ -7,10 +7,18 @@
         "data": {
           "host": "App hostname"
         }
+      },
+      "hassio_confirm": {
+        "title": "MAX! Cube Manager discovered",
+        "description": "Set up the MAX! Cube Manager connected to Cube {serial}?"
       }
     },
     "error": {
       "cannot_connect": "Could not connect to the app or read the Cube state. Check the full app hostname and make sure the app is running."
+    },
+    "abort": {
+      "cannot_connect": "Could not connect to the discovered MAX! Cube Manager app.",
+      "invalid_discovery": "The app sent invalid connection details."
     }
   }
 }

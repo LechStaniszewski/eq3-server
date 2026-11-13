@@ -1,9 +1,31 @@
+import json
 import unittest
+from unittest.mock import MagicMock, patch
 
-from .home_assistant import build_web_args
+from .home_assistant import build_web_args, publish_discovery
 
 
 class HomeAssistantAppTests(unittest.TestCase):
+    def test_publishes_supervisor_discovery_for_internal_api(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"result":"ok"}'
+        with patch(
+            "max_cube_manager.home_assistant.urlopen",
+            return_value=response,
+        ) as urlopen:
+            publish_discovery(token="supervisor-token", host="max-cube-manager-app")
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://supervisor/discovery")
+        self.assertEqual(request.get_header("Authorization"), "Bearer supervisor-token")
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "service": "max_cube_manager",
+                "config": {"host": "max-cube-manager-app", "port": 62910},
+            },
+        )
+
     def test_builds_ingress_arguments_with_configured_cube(self):
         args = build_web_args({"cube_host": " 192.0.2.10 ", "cube_port": 63000})
 

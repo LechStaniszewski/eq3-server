@@ -14,9 +14,9 @@ class MaxCubeApiError(Exception):
 
 
 class MaxCubeApi:
-    def __init__(self, session: ClientSession, host: str) -> None:
+    def __init__(self, session: ClientSession, host: str, port: int = API_PORT) -> None:
         self._session = session
-        self._base_url = f"http://{host}:{API_PORT}"
+        self._base_url = f"http://{host}:{port}"
 
     async def async_get_state(self) -> dict[str, Any]:
         data = await self._request("GET", "/api/state")
