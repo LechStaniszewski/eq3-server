@@ -114,6 +114,22 @@ class CubeStatusTests(unittest.TestCase):
 
 
 class SetpointTests(unittest.TestCase):
+    def test_room_setpoint_error_includes_cube_rejection_response(self):
+        cube = MemoryCubeClient()
+        cube.rooms[19] = {"id": 19}
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "room_id": 19,
+            "minimum temperature": 4.5,
+            "maximum temperature": 30.5,
+            "status": {"target_temperature": 21.0},
+        }
+        cube._wait_for = Mock(return_value=b"00,1,31")
+
+        with self.assertRaisesRegex(CubeError, r"response S:00,1,31"):
+            cube.adjust_room_setpoint(19, 0.5, address="19EF41")
+
     def test_room_setpoint_adjustment_broadcasts_to_all_room_thermostats(self):
         cube = MemoryCubeClient()
         cube.rooms[19] = {"id": 19}
@@ -183,9 +199,30 @@ class SetpointTests(unittest.TestCase):
 
 
 class ScheduleTests(unittest.TestCase):
+    def test_schedule_error_includes_cube_rejection_response(self):
+        cube = MemoryCubeClient()
+        cube.devices["19EF41"] = {"address": "19EF41", "type_code": 2, "room_id": 0}
+        cube._wait_for = Mock(return_value=b"00,1,31")
+        schedule = {day: [(24 * 3600, 20.0)] for day in DAY_ORDER}
+
+        with self.assertRaisesRegex(CubeError, r"response S:00,1,31"):
+            cube.set_schedule("19EF41", schedule)
+
     def test_program_is_encoded_as_thirteen_words(self):
         program = _encode_day_program([(6 * 3600, 17.0), (22 * 3600, 21.0)])
         self.assertEqual(len(program), 26)
+
+    def test_program_preserves_final_time_and_extends_temperature_to_midnight(self):
+        program = _encode_day_program([(16 * 3600, 21.0)])
+        points = [
+            (
+                (int.from_bytes(program[offset:offset + 2], "big") & 0x1FF) * 300,
+                (int.from_bytes(program[offset:offset + 2], "big") >> 9) / 2.0,
+            )
+            for offset in range(0, 4, 2)
+        ]
+
+        self.assertEqual(points, [(16 * 3600, 21.0), (24 * 3600, 21.0)])
 
     def test_program_rejects_non_half_degree_temperatures(self):
         with self.assertRaises(CubeError):

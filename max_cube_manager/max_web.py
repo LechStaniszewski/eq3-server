@@ -66,7 +66,7 @@ input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-of
 <section id="schedule-view" class="hidden">
  <div class="panel">
   <div class="schedule-head">
-   <div><button id="back-to-rooms">Back to rooms</button><h2 style="margin-top:12px">Weekly schedule</h2><div class="muted">Each temperature runs until its listed time; the final entry runs through midnight.</div></div>
+   <div><button id="back-to-rooms">Back to rooms</button><h2 style="margin-top:12px">Weekly schedule</h2><div class="muted">Each temperature runs until its listed time; if the last time is before midnight, that temperature continues through midnight.</div></div>
    <div class="field"><label for="target-device">Thermostat</label><select id="target-device"></select></div>
   </div>
   <div id="schedule-empty" class="muted hidden">No thermostats found.</div>
@@ -123,7 +123,7 @@ function updateDayFromInputs(day,card){try{const points=[];for(const row of card
 function addPointRow(day,card,point){const list=card.querySelector(".point-list"),row=document.createElement("div");row.className="point";const time=document.createElement("input");time.type="text";time.inputMode="numeric";time.placeholder="HH:MM";time.className="point-time";time.value=formatTime(point.time);time.setAttribute("aria-label",`${day} end time`);const temp=document.createElement("input");temp.type="number";temp.min="0.5";temp.max="31.5";temp.step="0.5";temp.className="point-temp";temp.value=point.temperature;temp.setAttribute("aria-label",`${day} temperature`);row.append(time,temp,button("×",()=>{row.remove();updateDayFromInputs(day,card)},"danger"));for(const input of [time,temp])input.addEventListener("change",()=>updateDayFromInputs(day,card));list.append(row)}
 function renderSchedule(){const root=$("schedule-days");root.replaceChildren();for(const day of DAYS){const card=document.createElement("div");card.className="schedule-day";const label=document.createElement("strong");label.textContent=day;const timeline=document.createElement("div");timeline.className="timeline";const list=document.createElement("div");list.className="point-list";const controls=document.createElement("div");controls.className="row";controls.append(button("+ transition",()=>{const points=schedule[day]||[];points.push({time:43200,temperature:20});schedule[day]=points;addPointRow(day,card,points[points.length-1]);updateDayFromInputs(day,card)}));card.append(label,timeline,list,controls);for(const point of schedule[day]||[])addPointRow(day,card,point);renderTimeline(day,timeline,schedule[day]||[]);root.append(card)}}
 $("target-device").addEventListener("change",()=>loadDeviceSchedule($("target-device").value));
-$("apply-schedule").addEventListener("click",async()=>{try{for(const day of DAYS){const card=[...$("schedule-days").children].find(item=>item.firstChild.textContent===day);if(!updateDayFromInputs(day,card))return;if(!schedule[day]?.length)throw new Error(`${day} needs at least one transition.`)}const address=$("target-device").value;if(!address)throw new Error("Select a thermostat first.");setStatus("Saving thermostat schedule…");const result=await api("/api/schedules/apply",{method:"POST",body:JSON.stringify({address,schedule})});setStatus(result.message||`Schedule saved for ${address}.`);await refresh(true)}catch(error){setStatus(error.message,true)}});
+$("apply-schedule").addEventListener("click",async()=>{try{for(const day of DAYS){const card=[...$("schedule-days").children].find(item=>item.firstChild.textContent===day);if(!updateDayFromInputs(day,card))return;if(!schedule[day]?.length)throw new Error(`${day} needs at least one transition.`)}const address=$("target-device").value;if(!address)throw new Error("Select a thermostat first.");setStatus("Sending schedule to Cube…");const result=await api("/api/schedules/apply",{method:"POST",body:JSON.stringify({address,schedule})});setStatus(result.message||`Schedule sent to Cube for ${address}.`)}catch(error){setStatus(error.message,true)}});
 refresh();
 </script>
 </body>
@@ -358,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("A thermostat address is required")
             schedule = parse_schedule(data.get("schedule", {}))
             self._with_cube(lambda cube: cube.set_schedule(address, schedule))
-            return {"address": address.upper(), "message": f"Schedule saved for {address.upper()}"}
+            return {"address": address.upper(), "message": f"Schedule sent to Cube for {address.upper()}"}
 
         if self.command == "POST" and path == "/api/thermostats/pair":
             thermostat = self._with_cube(lambda cube: cube.pair_thermostat(0))

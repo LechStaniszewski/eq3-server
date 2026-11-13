@@ -95,16 +95,20 @@ def _encode_day_program(points: Sequence[Tuple[int, float]]) -> bytes:
     if not points or len(points) > 13:
         raise CubeError("Each day needs between 1 and 13 schedule entries")
 
+    encoded_points = list(points)
+    if int(encoded_points[-1][0]) < 24 * 60 * 60:
+        if len(encoded_points) == 13:
+            raise CubeError("A schedule ending before midnight can have at most 12 entries")
+        encoded_points.append((24 * 60 * 60, encoded_points[-1][1]))
+
     encoded = bytearray()
     previous = -1
-    for index, (last_seconds, temperature) in enumerate(points):
+    for last_seconds, temperature in encoded_points:
         last_seconds = int(last_seconds)
         if last_seconds <= previous or not 0 <= last_seconds <= 24 * 60 * 60:
             raise CubeError("Schedule times must be strictly ascending and within one day")
         if last_seconds % 300:
             raise CubeError("Schedule times must be in five-minute increments")
-        if index == len(points) - 1:
-            last_seconds = 24 * 60 * 60
         previous = last_seconds
 
         scaled_temperature = float(temperature) * 2
@@ -582,7 +586,10 @@ class CubeClient:
         response = self._wait_for(b"S:")
         fields = response.split(b",")
         if len(fields) > 1 and fields[1] not in (b"", b"0"):
-            raise CubeError(f"Cube rejected the setpoint update for room {room_id}")
+            raise CubeError(
+                f"Cube rejected the setpoint update for room {room_id} "
+                f"(response S:{response.decode('ascii', errors='replace')})"
+            )
 
         return {
             "room_id": room_id,
@@ -668,7 +675,8 @@ class CubeClient:
                 fields = response.split(b",")
                 if len(fields) > 1 and fields[1] not in (b"", b"0"):
                     raise CubeError(
-                        f"Cube rejected schedule update for thermostat {address} on {day_name}"
+                        f"Cube rejected schedule update for thermostat {address} on {day_name} "
+                        f"(response S:{response.decode('ascii', errors='replace')})"
                     )
 
 

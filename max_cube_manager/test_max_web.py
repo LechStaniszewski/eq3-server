@@ -77,6 +77,7 @@ class WebScheduleTests(unittest.TestCase):
             )
 
         self.assertEqual(result["address"], "19EF41")
+        self.assertIn("Schedule sent", result["message"])
         self.assertEqual(len(cube.saved_schedules), 1)
         self.assertEqual(cube.saved_schedules[0][0], "19EF41")
 
