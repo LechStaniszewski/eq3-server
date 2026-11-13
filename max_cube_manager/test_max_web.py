@@ -13,6 +13,7 @@ class FakeCube:
     def __init__(self):
         self.saved_schedules = []
         self.updates = []
+        self.radio_state = {"duty_cycle": 100, "status": 1, "free_slots": 0, "updated_at": 1}
         self.devices = {
             "19EF41": {"address": "19EF41", "type_code": 2, "room_id": 7}
         }
@@ -59,8 +60,31 @@ class WebScheduleTests(unittest.TestCase):
             cube_host="192.0.2.1",
             cube_port=62910,
             debug=False,
+            radio_state=None,
         )
         return handler
+
+    def test_cube_operation_publishes_latest_radio_state(self):
+        handler = self.make_handler()
+        cube = FakeCube()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            handler._with_cube(lambda client: None)
+
+        self.assertEqual(handler.server.radio_state, cube.radio_state)
+
+    def test_radio_state_route_returns_last_cube_response(self):
+        handler = object.__new__(Handler)
+        handler.path = "/api/radio/state"
+        handler.server = SimpleNamespace(
+            radio_state={"duty_cycle": 100, "status": 1, "free_slots": 0}
+        )
+        handler._check_origin = lambda: True
+        handler._send_json = lambda status, data: setattr(handler, "sent", (status, data))
+
+        handler.do_GET()
+
+        self.assertEqual(handler.sent, (200, {"radio": handler.server.radio_state}))
 
     def test_schedule_route_saves_only_the_named_thermostat(self):
         cube = FakeCube()

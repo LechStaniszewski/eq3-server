@@ -53,7 +53,7 @@ input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-of
 </style>
 </head>
 <body>
-<header><div><h1>MAX! Cube</h1><div class="muted" id="cube-status">Connecting…</div></div><button id="refresh">Refresh</button></header>
+<header><div><h1>MAX! Cube</h1><div class="muted" id="cube-status">Connecting…</div><div class="small" id="radio-status">Radio status not queried yet.</div></div><button id="refresh">Refresh</button></header>
 <main>
 <div id="global-status" class="status" role="status" aria-live="polite"></div>
 <section id="devices-view">
@@ -104,12 +104,15 @@ function render(){const roomBox=$("rooms"),targetDevice=$("target-device");roomB
  const unassigned=state.thermostats.filter(device=>!state.rooms.some(room=>room.id===device.room_id));if(unassigned.length){const card=document.createElement("article");card.className="card";const heading=document.createElement("h3");heading.textContent="Unassigned thermostats";card.append(heading);const devices=document.createElement("div");devices.className="room-devices";for(const device of unassigned)devices.append(renderThermostat(device));card.append(devices);roomBox.append(card)}
  if(!state.rooms.length&&!unassigned.length){const empty=document.createElement("p");empty.className="muted";empty.textContent="No thermostats found.";roomBox.append(empty)}
  $("cube-status").textContent=`Cube ${state.cube?.serial||""} · ${state.host||""}`;
+ renderRadioStatus(state.radio);
  $("schedule-empty").classList.toggle("hidden",state.thermostats.length>0);$("apply-schedule").disabled=state.thermostats.length===0;$("schedule-days").classList.toggle("hidden",state.thermostats.length===0);
 }
+function renderRadioStatus(radio){const node=$("radio-status");if(!radio){node.textContent="Radio status not queried yet.";return}const result=radio.status===0?"last command accepted":"last command rejected";node.textContent=`Radio · duty ${radio.duty_cycle}% · ${radio.free_slots} queue slots · ${result}`;node.title=`Updated ${new Date(radio.updated_at*1000).toLocaleTimeString()}`}
+async function refreshRadioStatus(){try{const result=await api("/api/radio/state");renderRadioStatus(result.radio)}catch(error){$("radio-status").textContent=`Radio status unavailable: ${error.message}`}}
 async function refresh(reloadSchedule=false){try{state=await api("/api/state");render();const selectedAddress=$("target-device").value;if(selectedAddress&&((reloadSchedule)||scheduleAddress!==selectedAddress))loadDeviceSchedule(selectedAddress);$("cube-status").textContent=`Cube ${state.cube?.serial||""} · ${state.host||""}`;setStatus("Connected to Cube.")}catch(error){$("cube-status").textContent=`Connection failed · ${error.message}`;setStatus(`Could not load Cube state: ${error.message}`,true)}}
 async function mutate(path,method,body){try{setStatus("Working…");const result=await api(path,{method,body:JSON.stringify(body)});setStatus(result.message||"Done.");await refresh()}catch(error){setStatus(error.message,true)}}
 async function addThermostat(){if(!window.confirm("Start thermostat pairing now? Press the thermostat's pairing button when prompted."))return;const control=$("add-thermostat");control.disabled=true;setStatus("Pairing thermostat; press its pairing button now. This can take up to 60 seconds.");try{const result=await api("/api/thermostats/pair",{method:"POST",body:"{}"});setStatus(result.message);await refresh()}catch(error){setStatus(error.message,true)}finally{control.disabled=false}}
-async function changeSetpoint(roomId,path,delta){if(busyRooms.has(roomId))return;busyRooms.add(roomId);render();try{const result=await api(path,{method:"POST",body:JSON.stringify({delta})});await refresh(true);setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{busyRooms.delete(roomId);render()}}
+async function changeSetpoint(roomId,path,delta){if(busyRooms.has(roomId))return;busyRooms.add(roomId);render();setStatus("Sending temperature command to Cube…");try{const result=await api(path,{method:"POST",body:JSON.stringify({delta})});await refresh(true);setStatus(result.message)}catch(error){setStatus(error.message,true)}finally{busyRooms.delete(roomId);render()}}
 function showTab(name){$("devices-view").classList.toggle("hidden",name!=="devices");$("schedule-view").classList.toggle("hidden",name!=="schedule")}
 function openSchedule(address){$("target-device").value=address;loadDeviceSchedule(address);showTab("schedule")}
 $("back-to-rooms").addEventListener("click",()=>showTab("devices"));
@@ -124,6 +127,7 @@ function addPointRow(day,card,point){const list=card.querySelector(".point-list"
 function renderSchedule(){const root=$("schedule-days");root.replaceChildren();for(const day of DAYS){const card=document.createElement("div");card.className="schedule-day";const label=document.createElement("strong");label.textContent=day;const timeline=document.createElement("div");timeline.className="timeline";const list=document.createElement("div");list.className="point-list";const controls=document.createElement("div");controls.className="row";controls.append(button("+ transition",()=>{const points=schedule[day]||[];points.push({time:43200,temperature:20});schedule[day]=points;addPointRow(day,card,points[points.length-1]);updateDayFromInputs(day,card)}));card.append(label,timeline,list,controls);for(const point of schedule[day]||[])addPointRow(day,card,point);renderTimeline(day,timeline,schedule[day]||[]);root.append(card)}}
 $("target-device").addEventListener("change",()=>loadDeviceSchedule($("target-device").value));
 $("apply-schedule").addEventListener("click",async()=>{try{for(const day of DAYS){const card=[...$("schedule-days").children].find(item=>item.firstChild.textContent===day);if(!updateDayFromInputs(day,card))return;if(!schedule[day]?.length)throw new Error(`${day} needs at least one transition.`)}const address=$("target-device").value;if(!address)throw new Error("Select a thermostat first.");setStatus("Sending schedule to Cube…");const result=await api("/api/schedules/apply",{method:"POST",body:JSON.stringify({address,schedule})});setStatus(result.message||`Schedule sent to Cube for ${address}.`)}catch(error){setStatus(error.message,true)}});
+refreshRadioStatus();setInterval(refreshRadioStatus,2000);
 refresh();
 </script>
 </body>
@@ -148,6 +152,7 @@ class CubeWebServer(ThreadingHTTPServer):
         self.allow_home_assistant_ingress = allow_home_assistant_ingress
         self.debug = debug
         self.cube_lock = threading.Lock()
+        self.radio_state: Dict[str, Any] | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -238,7 +243,11 @@ class Handler(BaseHTTPRequestHandler):
         with self.server.cube_lock:
             try:
                 with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
-                    result = callback(cube)
+                    try:
+                        result = callback(cube)
+                    finally:
+                        if cube.radio_state is not None:
+                            self.server.radio_state = dict(cube.radio_state)
             except (CubeError, OSError):
                 if self.server.debug:
                     _LOGGER.debug(
@@ -267,9 +276,13 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 snapshot = self._with_cube(lambda cube: cube.snapshot())
                 snapshot["host"] = self.server.cube_host
+                snapshot["radio"] = self.server.radio_state
                 self._send_json(200, snapshot)
             except (CubeError, OSError) as exc:
                 self._send_json(502, {"error": str(exc)})
+            return
+        if path == "/api/radio/state":
+            self._send_json(200, {"radio": self.server.radio_state})
             return
         self._send_json(404, {"error": "Not found"})
 

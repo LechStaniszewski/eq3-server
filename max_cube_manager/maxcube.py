@@ -189,6 +189,7 @@ class CubeClient:
         self.info: Dict[str, str] = {}
         self.rooms: Dict[int, Dict[str, Any]] = {}
         self.devices: Dict[str, Dict[str, Any]] = {}
+        self.radio_state: Dict[str, Any] | None = None
         self._metadata_parts: Dict[int, bytes] = {}
         self._metadata_count = 0
 
@@ -536,6 +537,12 @@ class CubeClient:
                 raise CubeError(
                     f"Malformed Cube radio response S:{response.decode('ascii', errors='replace')}"
                 ) from exc
+            self.radio_state = {
+                "duty_cycle": duty_cycle,
+                "status": status,
+                "free_slots": free_slots,
+                "updated_at": time.time(),
+            }
             if status == 0:
                 return
 

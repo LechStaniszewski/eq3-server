@@ -124,6 +124,10 @@ class SetpointTests(unittest.TestCase):
             cube._send_radio_command(b"command", "test command")
 
         self.assertEqual(len(cube.sent), 2)
+        self.assertEqual(cube.radio_state["duty_cycle"], 0)
+        self.assertEqual(cube.radio_state["status"], 0)
+        self.assertEqual(cube.radio_state["free_slots"], 49)
+        self.assertIsInstance(cube.radio_state["updated_at"], float)
         sleep.assert_called_once_with(10.0)
 
     def test_radio_command_reports_rejection_when_queue_stays_full(self):
