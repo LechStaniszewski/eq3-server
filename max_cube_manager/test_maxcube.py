@@ -129,6 +129,37 @@ class CubeStatusTests(unittest.TestCase):
 
 
 class SetpointTests(unittest.TestCase):
+    def test_set_thermostat_temperature_sends_absolute_setpoint(self):
+        cube = MemoryCubeClient()
+        cube.rooms[7] = {"id": 7, "name": "Office"}
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "room_id": 7,
+            "status": {"mode": "auto"},
+        }
+        with patch.object(cube, "_send_radio_command") as send_command:
+            result = cube.set_thermostat_temperature("19ef41", 21.5)
+
+        self.assertEqual(result, {"address": "19EF41", "temperature": 21.5, "mode": "auto"})
+        self.assertEqual(
+            send_command.call_args.args[0],
+            bytes.fromhex("00004000000019ef41072b"),
+        )
+
+    def test_set_thermostat_temperature_rejects_values_outside_device_range(self):
+        cube = MemoryCubeClient()
+        cube.devices["19EF41"] = {
+            "address": "19EF41",
+            "type_code": 2,
+            "status": {"mode": "auto"},
+            "minimum temperature": 5.0,
+            "maximum temperature": 28.0,
+        }
+
+        with self.assertRaises(CubeError):
+            cube.set_thermostat_temperature("19EF41", 30.0)
+
     def test_radio_command_retries_when_cube_queue_is_full(self):
         cube = MemoryCubeClient()
         cube._wait_for = Mock(side_effect=[b"64,1,00", b"00,0,31"])

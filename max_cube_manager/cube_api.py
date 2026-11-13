@@ -1,4 +1,4 @@
-"""Internal HTTP API for sending one protocol line to a MAX! Cube."""
+"""Internal HTTP API for Home Assistant integrations and trusted apps."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class CubeMessageAPIHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_message(self) -> str:
+    def _read_json(self) -> Dict[str, Any]:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
@@ -47,45 +47,75 @@ class CubeMessageAPIHandler(BaseHTTPRequestHandler):
             raise ValueError("Request body must contain valid JSON") from exc
         if not isinstance(data, dict):
             raise ValueError("Request body must be a JSON object")
+        return data
+
+    def _read_message(self) -> str:
+        data = self._read_json()
         message = data.get("message")
         if not isinstance(message, str):
             raise ValueError("The message field must be a string")
         encode_cube_message(message)
         return message
 
-    def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/api/cube/message":
+    def do_GET(self) -> None:
+        if urlsplit(self.path).path != "/api/state":
             self._send_json(404, {"error": "Not found"})
             return
-
         try:
-            message = self._read_message()
-            started = time.monotonic()
             with self.server.cube_lock:
                 with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
-                    reply = cube.exchange_message(message)
-        except ValueError as exc:
-            if self.server.debug:
-                _LOGGER.debug("Rejected Cube message API request: %s", exc)
-            self._send_json(400, {"error": str(exc)})
-            return
+                    snapshot = cube.snapshot()
         except (CubeError, OSError) as exc:
-            if self.server.debug:
-                _LOGGER.debug(
-                    "Cube message API exchange failed",
-                    exc_info=True,
-                )
             self._send_json(502, {"error": str(exc)})
             return
+        self._send_json(200, snapshot)
 
-        if self.server.debug:
-            _LOGGER.debug(
-                "Cube message API exchange completed: request_bytes=%d reply_bytes=%d elapsed=%.3fs",
-                len(message.encode("ascii")),
-                len(reply.encode("ascii", errors="replace")),
-                time.monotonic() - started,
-            )
-        self._send_json(200, {"reply": reply})
+    def do_POST(self) -> None:
+        path = urlsplit(self.path).path
+        try:
+            if path == "/api/cube/message":
+                message = self._read_message()
+                started = time.monotonic()
+                with self.server.cube_lock:
+                    with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
+                        reply = cube.exchange_message(message)
+                if self.server.debug:
+                    _LOGGER.debug(
+                        "Cube message API exchange completed: request_bytes=%d reply_bytes=%d elapsed=%.3fs",
+                        len(message.encode("ascii")),
+                        len(reply.encode("ascii", errors="replace")),
+                        time.monotonic() - started,
+                    )
+                self._send_json(200, {"reply": reply})
+                return
+
+            parts = path.strip("/").split("/")
+            if len(parts) != 4 or parts[:2] != ["api", "thermostats"]:
+                self._send_json(404, {"error": "Not found"})
+                return
+            address, action = parts[2], parts[3]
+            if action not in {"setpoint", "mode"}:
+                self._send_json(404, {"error": "Not found"})
+                return
+            data = self._read_json()
+            with self.server.cube_lock:
+                with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
+                    if action == "setpoint":
+                        result = cube.set_thermostat_temperature(
+                            address,
+                            data.get("temperature"),
+                        )
+                    elif action == "mode":
+                        result = cube.set_thermostat_mode(address, data.get("mode"))
+            self._send_json(200, result)
+        except ValueError as exc:
+            if self.server.debug:
+                _LOGGER.debug("Rejected Cube API request: %s", exc)
+            self._send_json(400, {"error": str(exc)})
+        except (CubeError, OSError) as exc:
+            if self.server.debug:
+                _LOGGER.debug("Cube API operation failed", exc_info=True)
+            self._send_json(502, {"error": str(exc)})
 
 
 class CubeMessageAPIServer(ThreadingHTTPServer):

@@ -26,9 +26,25 @@ Debug logging does not include request bodies or raw Cube packets.
 - Rename rooms and thermostats, and move thermostats between rooms.
 - View and edit each thermostat's weekly schedule.
 - View current and target temperatures and adjust a room's target.
+- Pair thermostats using the Cube's pairing button.
 
 Radiator valves may not report a measured current temperature. In that case the
 interface displays **Not reported**.
+
+## Home Assistant climate entities
+
+The app's web interface does not itself register devices in Home Assistant.
+Install the companion integration from this repository by copying
+`custom_components/max_cube_manager` into Home Assistant's
+`config/custom_components/max_cube_manager` directory, then restart Home
+Assistant. In **Settings → Devices & services**, add **MAX! Cube Manager** and
+use the app hostname (default: `max_cube_manager`).
+
+The integration creates a Home Assistant climate entity for each thermostat
+already paired with the Cube. Newly paired thermostats are discovered
+automatically during the next status refresh (within about one minute).
+Temperature and Auto/Manual mode can be controlled from Home Assistant. The
+add-on must be running so the integration can reach its internal API.
 
 ## Internal Cube message API
 
@@ -48,6 +64,9 @@ The response contains the first reply line from the Cube:
 ```json
 {"reply":"A:accepted"}
 ```
+
+The companion integration also uses `GET /api/state` and thermostat setpoint
+and mode commands on this internal API.
 
 Send requests to `http://<app-id>:62910/api/cube/message` from the Home
 Assistant internal network. The app ID is shown in the Supervisor app list.

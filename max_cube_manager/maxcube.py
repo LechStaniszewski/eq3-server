@@ -630,6 +630,52 @@ class CubeClient:
             "thermostats": [device["address"] for device in thermostats],
         }
 
+    def set_thermostat_temperature(
+        self,
+        address: str,
+        temperature: float,
+    ) -> Dict[str, Any]:
+        address = address.strip().upper()
+        device = self.devices.get(address)
+        if device is None or device.get("type_code") not in {1, 2, 3}:
+            raise CubeError(f"Thermostat {address} does not exist")
+        if isinstance(temperature, bool):
+            raise CubeError("Thermostat temperature must be a number")
+        try:
+            temperature = float(temperature)
+        except (TypeError, ValueError) as exc:
+            raise CubeError("Thermostat temperature must be a number") from exc
+        if not math.isfinite(temperature):
+            raise CubeError("Thermostat temperature must be finite")
+
+        minimum = float(device.get("minimum temperature", 4.5))
+        maximum = float(device.get("maximum temperature", 30.5))
+        if not minimum <= temperature <= maximum:
+            raise CubeError(
+                f"Thermostat target must remain between {minimum:g}°C and {maximum:g}°C"
+            )
+        half_degrees = temperature * 2
+        if not half_degrees.is_integer() or not 0 < half_degrees <= 63:
+            raise CubeError("Thermostat temperatures must use 0.5°C increments")
+
+        room_id = int(device.get("room_id", 0))
+        if room_id not in self.rooms and room_id != 0:
+            raise CubeError(f"Thermostat {address} has unknown room {room_id}")
+        mode = device.get("status", {}).get("mode")
+        mode_code = 0 if mode == "auto" else 1
+        packet = (
+            b"\x00\x00\x40"
+            + b"\x00" * 3
+            + _decode_address(address)
+            + bytes([room_id, int(half_degrees) | (mode_code << 6)])
+        )
+        self._send_radio_command(packet, f"setpoint update for thermostat {address}")
+        return {
+            "address": address,
+            "temperature": temperature,
+            "mode": "auto" if mode_code == 0 else "manual",
+        }
+
     def set_thermostat_mode(self, address: str, mode: str) -> Dict[str, Any]:
         address = address.strip().upper()
         result = self._set_thermostat_modes([address], mode)
