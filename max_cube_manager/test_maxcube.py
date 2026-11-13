@@ -1,6 +1,6 @@
 import base64
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from .maxcube import (
     CubeClient,
@@ -21,6 +21,8 @@ class MemoryCubeClient(CubeClient):
         self.sent.append(line)
 
     def _wait_for(self, prefix, timeout=None):
+        if prefix == b"S:":
+            return b"00,0,31"
         return b""
 
 
@@ -114,6 +116,26 @@ class CubeStatusTests(unittest.TestCase):
 
 
 class SetpointTests(unittest.TestCase):
+    def test_radio_command_retries_when_cube_queue_is_full(self):
+        cube = MemoryCubeClient()
+        cube._wait_for = Mock(side_effect=[b"64,1,00", b"00,0,31"])
+
+        with patch("max_cube_manager.maxcube.time.sleep") as sleep:
+            cube._send_radio_command(b"command", "test command")
+
+        self.assertEqual(len(cube.sent), 2)
+        sleep.assert_called_once_with(10.0)
+
+    def test_radio_command_reports_rejection_when_queue_stays_full(self):
+        cube = MemoryCubeClient()
+        cube._wait_for = Mock(return_value=b"64,1,00")
+
+        with patch("max_cube_manager.maxcube.RADIO_QUEUE_RETRY_SECONDS", 0):
+            with self.assertRaisesRegex(CubeError, "queue stayed full.*S:64,1,00"):
+                cube._send_radio_command(b"command", "test command")
+
+        self.assertEqual(len(cube.sent), 1)
+
     def test_room_setpoint_error_includes_cube_rejection_response(self):
         cube = MemoryCubeClient()
         cube.rooms[19] = {"id": 19}

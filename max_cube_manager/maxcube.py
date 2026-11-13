@@ -14,6 +14,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 DEFAULT_PORT = 62910
 DISCOVERY_PORT = 23272
 DISCOVERY_PACKET = b"eQ3Max*\x00**********I"
+RADIO_QUEUE_RETRY_SECONDS = 30.0
+RADIO_QUEUE_RETRY_INTERVAL = 10.0
 DEVICE_TYPE_MAP = {
     0: "Cube",
     1: "RadiatorThermostat",
@@ -516,11 +518,38 @@ class CubeClient:
             + bytes([room_id])
             + data
         )
-        self._send_line(b"s:" + base64.b64encode(packet))
-        response = self._wait_for(b"S:")
-        fields = response.split(b",")
-        if len(fields) > 1 and fields[1] not in (b"", b"0"):
-            raise CubeError(f"Cube rejected command {command:02X} for thermostat {address}")
+        self._send_radio_command(packet, f"command {command:02X} for thermostat {address}")
+
+    def _send_radio_command(self, packet: bytes, description: str) -> None:
+        deadline = time.monotonic() + RADIO_QUEUE_RETRY_SECONDS
+        while True:
+            self._send_line(b"s:" + base64.b64encode(packet))
+            response = self._wait_for(b"S:")
+            fields = response.split(b",", 2)
+            if len(fields) != 3:
+                raise CubeError(f"Malformed Cube radio response S:{response.decode('ascii', errors='replace')}")
+            try:
+                duty_cycle = int(fields[0], 16)
+                status = int(fields[1])
+                free_slots = int(fields[2], 16)
+            except ValueError as exc:
+                raise CubeError(
+                    f"Malformed Cube radio response S:{response.decode('ascii', errors='replace')}"
+                ) from exc
+            if status == 0:
+                return
+
+            response_text = response.decode("ascii", errors="replace")
+            if status == 1 and duty_cycle >= 100 and free_slots == 0:
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(min(RADIO_QUEUE_RETRY_INTERVAL, remaining))
+                    continue
+                raise CubeError(
+                    f"Cube radio queue stayed full while sending {description} "
+                    f"(response S:{response_text})"
+                )
+            raise CubeError(f"Cube rejected {description} (response S:{response_text})")
 
     def adjust_room_setpoint(
         self,
@@ -582,14 +611,7 @@ class CubeClient:
             + b"\x00" * 6
             + bytes([room_id, int(half_degrees) | 0x40])
         )
-        self._send_line(b"s:" + base64.b64encode(packet))
-        response = self._wait_for(b"S:")
-        fields = response.split(b",")
-        if len(fields) > 1 and fields[1] not in (b"", b"0"):
-            raise CubeError(
-                f"Cube rejected the setpoint update for room {room_id} "
-                f"(response S:{response.decode('ascii', errors='replace')})"
-            )
+        self._send_radio_command(packet, f"setpoint update for room {room_id}")
 
         return {
             "room_id": room_id,
@@ -670,14 +692,10 @@ class CubeClient:
                     + bytes([room_id, code])
                     + chunk
                 )
-                self._send_line(b"s:" + base64.b64encode(packet))
-                response = self._wait_for(b"S:")
-                fields = response.split(b",")
-                if len(fields) > 1 and fields[1] not in (b"", b"0"):
-                    raise CubeError(
-                        f"Cube rejected schedule update for thermostat {address} on {day_name} "
-                        f"(response S:{response.decode('ascii', errors='replace')})"
-                    )
+                self._send_radio_command(
+                    packet,
+                    f"schedule update for thermostat {address} on {day_name}",
+                )
 
 
 def _clean_name(value: str) -> str:
