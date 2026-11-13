@@ -130,6 +130,16 @@ class SetpointTests(unittest.TestCase):
         self.assertIsInstance(cube.radio_state["updated_at"], float)
         sleep.assert_called_once_with(10.0)
 
+    def test_radio_command_retries_when_no_slots_below_duty_limit(self):
+        cube = MemoryCubeClient()
+        cube._wait_for = Mock(side_effect=[b"13,1,00", b"00,0,31"])
+
+        with patch("max_cube_manager.maxcube.time.sleep") as sleep:
+            cube._send_radio_command(b"command", "test command")
+
+        self.assertEqual(len(cube.sent), 2)
+        sleep.assert_called_once_with(10.0)
+
     def test_radio_command_reports_rejection_when_queue_stays_full(self):
         cube = MemoryCubeClient()
         cube._wait_for = Mock(return_value=b"64,1,00")

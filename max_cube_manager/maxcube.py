@@ -547,7 +547,7 @@ class CubeClient:
                 return
 
             response_text = response.decode("ascii", errors="replace")
-            if status == 1 and duty_cycle >= 100 and free_slots == 0:
+            if status == 1 and free_slots == 0:
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
                     time.sleep(min(RADIO_QUEUE_RETRY_INTERVAL, remaining))
