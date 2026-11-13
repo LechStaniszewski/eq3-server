@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import MaxCubeApi, MaxCubeApiError
-from .const import DEFAULT_HOST, DOMAIN
+from .const import DOMAIN
 
 
 async def _validate_connection(hass: HomeAssistant, host: str) -> str:
@@ -44,7 +44,7 @@ class MaxCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required("host", default=DEFAULT_HOST): str,
+                vol.Required("host"): str,
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)

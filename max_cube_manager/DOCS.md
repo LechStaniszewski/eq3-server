@@ -39,7 +39,8 @@ Install the companion integration through HACS by adding
 **Integration**. Alternatively, copy `custom_components/max_cube_manager` into
 Home Assistant's `config/custom_components/max_cube_manager` directory. Restart
 Home Assistant, then in **Settings → Devices & services** add
-**MAX! Cube Manager** and use the app hostname (default: `max_cube_manager`).
+**MAX! Cube Manager** and enter the full app network hostname shown by
+Home Assistant (its App ID with underscores replaced by hyphens).
 
 The integration creates a Home Assistant climate entity for each thermostat
 already paired with the Cube. Newly paired thermostats are discovered

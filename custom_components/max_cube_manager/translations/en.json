@@ -3,14 +3,14 @@
     "step": {
       "user": {
         "title": "Connect to MAX! Cube Manager",
-        "description": "Enter the hostname of the MAX! Cube Manager Home Assistant app.",
+        "description": "Enter the app's network hostname from Home Assistant Settings > Apps. Use its full App ID with underscores replaced by hyphens; for example, local-max-cube-manager for a local app.",
         "data": {
           "host": "App hostname"
         }
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to the app or read the Cube state."
+      "cannot_connect": "Could not connect to the app or read the Cube state. Check the full app hostname and make sure the app is running."
     }
   }
 }

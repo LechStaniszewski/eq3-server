@@ -18,8 +18,9 @@ Install HACS first, then add this repository as a custom integration:
 1. In HACS, open **Integrations** and choose **Custom repositories** from the menu.
 2. Add `https://github.com/LechStaniszewski/eq3-server` with category **Integration**.
 3. Install **MAX! Cube Manager** and restart Home Assistant.
-4. Add **MAX! Cube Manager** under **Settings > Devices & services**. Use
-   `max_cube_manager` as the app hostname unless the app has a different slug.
+4. Add **MAX! Cube Manager** under **Settings > Devices & services**. Enter
+   the full app network hostname from Home Assistant's Apps page (the App ID,
+   with underscores replaced by hyphens).
 
 After this one-time setup, HACS can provide integration updates. See the app's
 [documentation](./max_cube_manager/DOCS.md) for manual installation and entity
