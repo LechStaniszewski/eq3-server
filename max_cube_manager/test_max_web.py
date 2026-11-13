@@ -1,11 +1,19 @@
 import io
+import tempfile
 import threading
 import unittest
 from contextlib import redirect_stderr
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from .max_web import Handler, PAGE, main as web_main
+from .max_web import (
+    AutomationSettings,
+    Handler,
+    HourlyAutoModeJob,
+    PAGE,
+    main as web_main,
+)
 from .maxcube import CubeError, DAY_ORDER
 
 
@@ -13,6 +21,7 @@ class FakeCube:
     def __init__(self):
         self.saved_schedules = []
         self.updates = []
+        self.snapshot_count = 0
         self.radio_state = {"duty_cycle": 100, "status": 1, "free_slots": 0, "updated_at": 1}
         self.devices = {
             "19EF41": {"address": "19EF41", "type_code": 2, "room_id": 7}
@@ -23,6 +32,10 @@ class FakeCube:
 
     def __exit__(self, exc_type, exc_value, traceback):
         return None
+
+    def snapshot(self):
+        self.snapshot_count += 1
+        return {}
 
     def set_schedule(self, address, schedule):
         self.saved_schedules.append((address, schedule))
@@ -326,11 +339,108 @@ class IngressFrontendTests(unittest.TestCase):
         self.assertIn("function activeMode(devices)", PAGE)
         self.assertIn("device.status?.mode===mode", PAGE)
         self.assertIn("activeMode(state.thermostats)", PAGE)
-        self.assertIn("if(await refresh())setStatus(result.message)", PAGE)
+        self.assertIn("if(await refreshAfterUpdate())setStatus(result.message)", PAGE)
         self.assertIn(
             ".mode-button.active,.mode-button.active:hover{background:#1769d2",
             PAGE,
         )
+
+    def test_ui_polls_status_and_waits_after_cube_updates(self):
+        self.assertIn('id="force-auto-hourly">Force switch to auto every 1h', PAGE)
+        self.assertIn("setInterval(()=>refresh(),STATUS_REFRESH_INTERVAL_SECONDS*1000)", PAGE)
+        self.assertIn("setTimeout(resolve,5000)", PAGE)
+        self.assertIn(".menu-content>input,.menu-content>select{grid-column:1}", PAGE)
+
+
+class AutomationSettingsTests(unittest.TestCase):
+    def test_hourly_auto_setting_persists_across_instances(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "automation.json"
+            settings = AutomationSettings(path)
+
+            self.assertEqual(settings.snapshot(), {"force_auto_hourly": False})
+            self.assertEqual(
+                settings.set_force_auto_hourly(True),
+                {"force_auto_hourly": True},
+            )
+            self.assertEqual(
+                AutomationSettings(path).snapshot(),
+                {"force_auto_hourly": True},
+            )
+
+    def test_state_route_exposes_persisted_hourly_auto_setting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = AutomationSettings(Path(directory) / "automation.json")
+            settings.set_force_auto_hourly(True)
+            handler = object.__new__(Handler)
+            handler.command = "GET"
+            handler.path = "/api/state"
+            handler.server = SimpleNamespace(
+                cube_lock=threading.Lock(),
+                cube_host="192.0.2.1",
+                cube_port=62910,
+                debug=False,
+                radio_state=None,
+                automation_settings=settings,
+            )
+            handler._check_origin = lambda: True
+            handler._send_json = lambda status, data: setattr(handler, "sent", (status, data))
+
+            with patch("max_cube_manager.max_web.CubeClient", return_value=FakeCube()):
+                handler.do_GET()
+
+            self.assertEqual(handler.sent[0], 200)
+            self.assertEqual(
+                handler.sent[1]["automation"],
+                {"force_auto_hourly": True},
+            )
+
+    def test_auto_hourly_route_persists_checkbox_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = AutomationSettings(Path(directory) / "automation.json")
+            handler = object.__new__(Handler)
+            handler.command = "POST"
+            handler.server = SimpleNamespace(
+                automation_settings=settings,
+                auto_mode_job=None,
+            )
+
+            result = handler._route_mutation(
+                "/api/automation/auto-hourly",
+                {"enabled": True},
+            )
+
+            self.assertEqual(result["automation"], {"force_auto_hourly": True})
+            self.assertTrue(settings.snapshot()["force_auto_hourly"])
+
+    def test_hourly_job_switches_to_auto_then_refreshes_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = AutomationSettings(Path(directory) / "automation.json")
+            settings.set_force_auto_hourly(True)
+            cube = FakeCube()
+            server = SimpleNamespace(
+                cube_lock=threading.Lock(),
+                cube_host="192.0.2.1",
+                cube_port=62910,
+                radio_state=None,
+            )
+            job = HourlyAutoModeJob(server, settings)
+
+            with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+                with patch.object(job._stop, "wait", return_value=False) as wait:
+                    job._switch_all_to_auto()
+
+            self.assertEqual(cube.updates, [("all_mode", "auto")])
+            self.assertEqual(cube.snapshot_count, 2)
+            wait.assert_called_once_with(5)
+
+    def test_hourly_auto_setting_rejects_non_boolean_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "automation.json"
+            path.write_text('{"force_auto_hourly":"yes"}', encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "invalid force_auto_hourly"):
+                AutomationSettings(path)
 
 
 if __name__ == "__main__":

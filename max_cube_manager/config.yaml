@@ -1,5 +1,5 @@
 name: "MAX! Cube Manager"
-version: "0.1.10"
+version: "0.1.11"
 slug: "max_cube_manager"
 description: "Manage MAX! Cube thermostats, rooms, and schedules."
 stage: experimental
