@@ -114,6 +114,19 @@ class CubeStatusTests(unittest.TestCase):
         self.assertEqual(status["target_temperature"], 23.5)
         self.assertEqual(status["current_temperature"], 28.8)
 
+    def test_status_decodes_cube_actual_temperature(self):
+        cube = MemoryCubeClient()
+        cube.devices["19F5E8"] = {"address": "19F5E8", "type_code": 2}
+        record = bytes.fromhex("19f5e80000003c28000000a9")
+
+        cube._parse_status(base64.b64encode(bytes([len(record)]) + record))
+
+        status = cube.devices["19F5E8"]["status"]
+        self.assertEqual(status["mode"], "auto")
+        self.assertEqual(status["current_temperature"], 16.9)
+        self.assertEqual(status["target_temperature"], 20.0)
+        self.assertEqual(status["valve_position"], 60)
+
 
 class SetpointTests(unittest.TestCase):
     def test_radio_command_retries_when_cube_queue_is_full(self):
