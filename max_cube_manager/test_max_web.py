@@ -368,6 +368,8 @@ class IngressFrontendTests(unittest.TestCase):
         self.assertIn('id="add-thermostat" class="primary">Add thermostat</button><button id="add-room">Add room', PAGE)
         self.assertIn('api("/api/rooms",{method:"POST"', PAGE)
         self.assertIn("setInterval(()=>refresh(),STATUS_REFRESH_INTERVAL_SECONDS*1000)", PAGE)
+        self.assertIn("renderRadioStatus(state.radio)", PAGE)
+        self.assertNotIn("setInterval(refreshRadioStatus,2000)", PAGE)
         self.assertIn("setTimeout(resolve,5000)", PAGE)
         self.assertIn(".menu-content>input,.menu-content>select{grid-column:1}", PAGE)
         self.assertIn(".menu-content>button:nth-of-type(3){grid-column:1/-1}", PAGE)
