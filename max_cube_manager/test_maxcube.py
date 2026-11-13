@@ -53,6 +53,19 @@ class CubeMetadataTests(unittest.TestCase):
             cube.delete_room(7)
         self.assertIn(7, cube.rooms)
 
+    def test_pair_thermostat_can_remain_unassigned(self):
+        cube = MemoryCubeClient()
+        pairing = bytes([2]) + bytes.fromhex("19EF41") + b"SERIAL1234" + b"\x00"
+        cube._wait_for = Mock(side_effect=[base64.b64encode(pairing), b""])
+
+        device = cube.pair_thermostat(0)
+
+        self.assertEqual(device["room_id"], 0)
+        self.assertEqual(device["address"], "19EF41")
+        self.assertEqual(len(cube.sent), 2)
+        self.assertEqual(cube.sent[0], b"n:")
+        self.assertTrue(cube.sent[1].startswith(b"m:"))
+
 
 class CubeMessageTests(unittest.TestCase):
     def test_exchange_message_sends_one_crlf_line_and_returns_reply(self):
@@ -85,6 +98,7 @@ class CubeStatusTests(unittest.TestCase):
         status = cube.devices["19EF41"]["status"]
         self.assertEqual(status["target_temperature"], 23.5)
         self.assertEqual(status["mode"], "manual")
+        self.assertEqual(status["valve_position"], 15)
         self.assertIsNone(status["current_temperature"])
 
     def test_status_parses_measured_temperature_when_present(self):

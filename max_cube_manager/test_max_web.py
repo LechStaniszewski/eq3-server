@@ -45,6 +45,10 @@ class FakeCube:
             "thermostats": ["19EF41", "1A6878"],
         }
 
+    def pair_thermostat(self, room_id):
+        self.updates.append(("pair", room_id))
+        return {"address": "19EF41", "room_id": room_id}
+
 
 class WebScheduleTests(unittest.TestCase):
     def make_handler(self):
@@ -84,6 +88,17 @@ class WebScheduleTests(unittest.TestCase):
                 "/api/schedules/apply",
                 {"target": {"scope": "all"}, "schedule": {}},
             )
+
+    def test_pair_route_defaults_new_thermostat_to_unassigned(self):
+        cube = FakeCube()
+        handler = self.make_handler()
+
+        with patch("max_cube_manager.max_web.CubeClient", return_value=cube):
+            result = handler._route_mutation("/api/thermostats/pair", {})
+
+        self.assertEqual(result["thermostat"]["room_id"], 0)
+        self.assertIn("Unassigned", result["message"])
+        self.assertEqual(cube.updates, [("pair", 0)])
 
     def test_thermostat_update_saves_name_and_room(self):
         cube = FakeCube()

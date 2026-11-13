@@ -592,7 +592,7 @@ class CubeClient:
 
     def pair_thermostat(self, room_id: int, name: str = "") -> Dict[str, Any]:
         room_id = int(room_id)
-        if room_id not in self.rooms:
+        if room_id != 0 and room_id not in self.rooms:
             raise CubeError(f"Room {room_id} does not exist")
         self._send_line(b"n:")
         encoded = self._wait_for(b"N:", timeout=self.pair_timeout)
@@ -614,12 +614,15 @@ class CubeClient:
             "room_id": 0,
         }
         self.devices[address] = device
-        try:
-            self.assign_thermostat(address, room_id)
-        except (CubeError, OSError) as exc:
-            raise CubeError(
-                f"Thermostat {address} paired, but assigning it to room {room_id} failed: {exc}"
-            ) from exc
+        if room_id:
+            try:
+                self.assign_thermostat(address, room_id)
+            except (CubeError, OSError) as exc:
+                raise CubeError(
+                    f"Thermostat {address} paired, but assigning it to room {room_id} failed: {exc}"
+                ) from exc
+        else:
+            self._write_metadata()
         return self.devices[address].copy()
 
     def forget_thermostat(self, address: str) -> None:
