@@ -6,12 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any, Dict, Sequence
 from urllib.parse import unquote, urlsplit
 
@@ -27,61 +24,16 @@ _LOGGER = logging.getLogger(__name__)
 
 AUTO_MODE_INTERVAL_SECONDS = 60 * 60
 POST_UPDATE_REFRESH_DELAY_SECONDS = 5
-DEFAULT_AUTOMATION_STATE_FILE = Path("/data/max_cube_manager_automation.json")
-
-
-class AutomationSettings:
-    def __init__(self, state_file: Path = DEFAULT_AUTOMATION_STATE_FILE) -> None:
-        self.state_file = Path(state_file)
-        self._lock = threading.Lock()
-        self._force_auto_hourly = self._load()
-
-    def _load(self) -> bool:
-        try:
-            data = json.loads(self.state_file.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return False
-        except json.JSONDecodeError as exc:
-            raise ValueError("Automation state file contains invalid JSON") from exc
-        if not isinstance(data, dict) or type(data.get("force_auto_hourly", False)) is not bool:
-            raise ValueError("Automation state file has an invalid force_auto_hourly value")
-        return data.get("force_auto_hourly", False)
-
-    def snapshot(self) -> Dict[str, bool]:
-        with self._lock:
-            return {"force_auto_hourly": self._force_auto_hourly}
-
-    def set_force_auto_hourly(self, enabled: bool) -> Dict[str, bool]:
-        if type(enabled) is not bool:
-            raise ValueError("force_auto_hourly must be a boolean")
-        with self._lock:
-            self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            temporary_path = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=self.state_file.parent,
-                    prefix=f"{self.state_file.name}.",
-                    delete=False,
-                ) as state_file:
-                    temporary_path = Path(state_file.name)
-                    json.dump({"force_auto_hourly": enabled}, state_file)
-                    state_file.write("\n")
-                os.replace(temporary_path, self.state_file)
-            finally:
-                if temporary_path is not None and temporary_path.exists():
-                    temporary_path.unlink()
-            self._force_auto_hourly = enabled
-            return {"force_auto_hourly": enabled}
 
 
 class HourlyAutoModeJob:
-    def __init__(self, server, settings: AutomationSettings) -> None:
+    def __init__(self, server, enabled: bool, interval_seconds: int) -> None:
+        if interval_seconds < 1:
+            raise ValueError("Auto mode interval must be at least one second")
         self.server = server
-        self.settings = settings
+        self.enabled = enabled
+        self.interval_seconds = interval_seconds
         self._stop = threading.Event()
-        self._wake = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
             name="hourly-auto-mode",
@@ -93,20 +45,17 @@ class HourlyAutoModeJob:
 
     def stop(self) -> None:
         self._stop.set()
-        self._wake.set()
         if self._thread.ident is not None:
             self._thread.join()
-
-    def settings_changed(self) -> None:
-        self._wake.set()
 
     def _run_cube_operation(self, callback):
         with self.server.cube_lock:
             with CubeClient(self.server.cube_host, self.server.cube_port) as cube:
-                result = callback(cube)
-                if cube.radio_state is not None:
-                    self.server.radio_state = dict(cube.radio_state)
-                return result
+                try:
+                    return callback(cube)
+                finally:
+                    if cube.radio_state is not None:
+                        self.server.radio_state = dict(cube.radio_state)
 
     def _switch_all_to_auto(self) -> None:
         self._run_cube_operation(
@@ -121,26 +70,7 @@ class HourlyAutoModeJob:
         _LOGGER.info("Hourly job switched all thermostats to Auto")
 
     def _run(self) -> None:
-        next_run = (
-            time.monotonic() + AUTO_MODE_INTERVAL_SECONDS
-            if self.settings.snapshot()["force_auto_hourly"]
-            else None
-        )
-        while not self._stop.is_set():
-            if not self.settings.snapshot()["force_auto_hourly"]:
-                next_run = None
-                self._wake.wait()
-                self._wake.clear()
-                continue
-            if next_run is None:
-                next_run = time.monotonic() + AUTO_MODE_INTERVAL_SECONDS
-            remaining = next_run - time.monotonic()
-            if remaining > 0:
-                self._wake.wait(remaining)
-                self._wake.clear()
-                continue
-
-            next_run = time.monotonic() + AUTO_MODE_INTERVAL_SECONDS
+        while self.enabled and not self._stop.wait(self.interval_seconds):
             try:
                 self._switch_all_to_auto()
             except (CubeError, OSError):
@@ -168,7 +98,7 @@ input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-of
 .device{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.device-meta{font-size:13px;color:var(--muted);margin:3px 0 9px}.room-devices{display:grid;gap:10px;margin-top:14px}.thermostat-card{padding:12px;border:1px solid var(--line);border-radius:9px}.thermostat-card h3{margin:0 0 4px}
 .room-head,.thermostat-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.menu{position:relative}.menu summary{list-style:none;border:1px solid var(--line);border-radius:8px;background:#21323e;padding:5px 11px;cursor:pointer;font-size:20px;line-height:1.2}.menu summary::-webkit-details-marker{display:none}.menu[open] .menu-content{position:absolute;z-index:5;right:calc(100% + 16px);top:0;width:min(290px,80vw);padding:14px;background:#14212a;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0008;display:grid;gap:10px}.menu-content input{width:100%}.temperature-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}.temperature-label{color:var(--muted)}.setpoint-controls{display:flex;align-items:center;gap:6px}.setpoint-controls button{min-width:38px;padding:5px 10px;font-size:18px}.setpoint-controls button:disabled{opacity:.45;cursor:not-allowed}.thermostat-note{margin-top:5px}.room-setpoint{padding:8px 0;border-top:1px solid var(--line);margin-top:8px}
 .form-row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.field{display:grid;gap:5px}.field label{font-size:13px;color:var(--muted)}
-.menu[open] .menu-content{grid-template-columns:minmax(0,1fr) auto}.menu-content>label{grid-column:1/-1}.menu-content>input,.menu-content>select{grid-column:1}.menu-content>.menu-wide{grid-column:1/-1}.inline-checkbox{display:inline-flex;align-items:center;gap:7px}.inline-checkbox input{width:auto}
+.menu[open] .menu-content{grid-template-columns:minmax(0,1fr) auto}.menu-content>label{grid-column:1/-1}.menu-content>input,.menu-content>select{grid-column:1}.menu-content>button:nth-of-type(3){grid-column:1/-1}
 .status{min-height:24px;margin:8px 0;color:var(--accent)}.status.error{color:var(--danger)}.status.warn{color:var(--warn)}
 .schedule-day{display:grid;grid-template-columns:54px minmax(180px,1fr) minmax(240px,1.3fr);gap:12px;align-items:center;border-top:1px solid var(--line);padding:12px 0}
 .timeline{height:28px;display:flex;overflow:hidden;border-radius:6px;background:#27343d}.segment{height:100%;min-width:2px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#101820;font-size:11px;font-weight:650;white-space:nowrap}
@@ -186,7 +116,7 @@ input:focus,select:focus,button:focus{outline:2px solid var(--accent);outline-of
  <div class="panel">
   <div class="room-head"><h2>Thermostats by room</h2><button id="add-thermostat" class="primary">Add thermostat</button></div>
   <div class="small">To pair, press the thermostat's pairing button after starting.</div>
-  <div class="row" style="margin-top:12px"><strong>All thermostats</strong><button id="all-mode-auto" class="mode-button">Auto</button><button id="all-mode-manual" class="mode-button">Manual</button><label class="inline-checkbox"><input type="checkbox" id="force-auto-hourly">Force switch to auto every 1h</label></div>
+  <div class="row" style="margin-top:12px"><strong>All thermostats</strong><button id="all-mode-auto" class="mode-button">Auto</button><button id="all-mode-manual" class="mode-button">Manual</button></div>
   <div id="rooms" class="grid"></div>
  </div>
 </section>
@@ -235,7 +165,7 @@ function render(){const roomBox=$("rooms"),targetDevice=$("target-device");roomB
  if(!state.rooms.length&&!unassigned.length){const empty=document.createElement("p");empty.className="muted";empty.textContent="No thermostats found.";roomBox.append(empty)}
  $("cube-status").textContent=`Cube ${state.cube?.serial||""} · ${state.host||""}`;
  renderRadioStatus(state.radio);
- const allMode=activeMode(state.thermostats);$("all-mode-auto").classList.toggle("active",allMode==="auto");$("all-mode-auto").setAttribute("aria-pressed",String(allMode==="auto"));$("all-mode-manual").classList.toggle("active",allMode==="manual");$("all-mode-manual").setAttribute("aria-pressed",String(allMode==="manual"));$("all-mode-auto").disabled=!state.thermostats.length||busyModes.size>0;$("all-mode-manual").disabled=!state.thermostats.length||busyModes.size>0;$("force-auto-hourly").checked=state.automation?.force_auto_hourly===true;
+ const allMode=activeMode(state.thermostats);$("all-mode-auto").classList.toggle("active",allMode==="auto");$("all-mode-auto").setAttribute("aria-pressed",String(allMode==="auto"));$("all-mode-manual").classList.toggle("active",allMode==="manual");$("all-mode-manual").setAttribute("aria-pressed",String(allMode==="manual"));$("all-mode-auto").disabled=!state.thermostats.length||busyModes.size>0;$("all-mode-manual").disabled=!state.thermostats.length||busyModes.size>0;
  $("schedule-empty").classList.toggle("hidden",state.thermostats.length>0);$("apply-schedule").disabled=state.thermostats.length===0;$("schedule-days").classList.toggle("hidden",state.thermostats.length===0);
 }
 function renderRadioStatus(radio){const node=$("radio-status");if(!radio){node.textContent="Radio status not queried yet.";return}const result=radio.status===0?"last command accepted":"last command rejected";node.textContent=`Radio · duty ${radio.duty_cycle}% · ${radio.free_slots} queue slots · ${result}`;node.title=`Updated ${new Date(radio.updated_at*1000).toLocaleTimeString()}`}
@@ -253,7 +183,6 @@ $("back-to-rooms").addEventListener("click",()=>showTab("devices"));
 $("add-thermostat").addEventListener("click",addThermostat);
 $("all-mode-auto").addEventListener("click",()=>changeModeBatch("/api/thermostats/mode","auto","all","all thermostats"));
 $("all-mode-manual").addEventListener("click",()=>changeModeBatch("/api/thermostats/mode","manual","all","all thermostats"));
-$("force-auto-hourly").addEventListener("change",async()=>{const control=$("force-auto-hourly");control.disabled=true;try{const result=await api("/api/automation/auto-hourly",{method:"POST",body:JSON.stringify({enabled:control.checked})});state.automation=result.automation;setStatus(result.message)}catch(error){control.checked=state.automation?.force_auto_hourly===true;setStatus(error.message,true)}finally{control.disabled=false}});
 $("refresh").addEventListener("click",()=>refresh(true));
 function formatTime(seconds){if(seconds>=86400)return"24:00";const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60);return`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`}
 function parseTime(value){const match=/^(\d{1,2}):([0-5]\d)$/.exec(value);if(!match)throw new Error("Use HH:MM for schedule times.");const h=Number(match[1]),m=Number(match[2]);if(h>24||(h===24&&m!==0))throw new Error("Schedule times must be before 24:00.");if(m%5!==0)throw new Error("Schedule times must be in five-minute increments.");return(h*60+m)*60}
@@ -283,7 +212,8 @@ class CubeWebServer(ThreadingHTTPServer):
         cube_port: int,
         allow_home_assistant_ingress: bool = False,
         debug: bool = False,
-        automation_state_file: Path = DEFAULT_AUTOMATION_STATE_FILE,
+        auto_mode_enabled: bool = True,
+        auto_mode_interval_seconds: int = AUTO_MODE_INTERVAL_SECONDS,
     ) -> None:
         super().__init__(address, handler)
         self.cube_host = cube_host
@@ -292,7 +222,8 @@ class CubeWebServer(ThreadingHTTPServer):
         self.debug = debug
         self.cube_lock = threading.Lock()
         self.radio_state: Dict[str, Any] | None = None
-        self.automation_settings = AutomationSettings(automation_state_file)
+        self.auto_mode_enabled = auto_mode_enabled
+        self.auto_mode_interval_seconds = auto_mode_interval_seconds
         self.auto_mode_job: HourlyAutoModeJob | None = None
 
 
@@ -418,7 +349,6 @@ class Handler(BaseHTTPRequestHandler):
                 snapshot = self._with_cube(lambda cube: cube.snapshot())
                 snapshot["host"] = self.server.cube_host
                 snapshot["radio"] = self.server.radio_state
-                snapshot["automation"] = self.server.automation_settings.snapshot()
                 self._send_json(200, snapshot)
             except (CubeError, OSError) as exc:
                 self._send_json(502, {"error": str(exc)})
@@ -456,22 +386,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route_mutation(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
         parts = path.strip("/").split("/")
-        if self.command == "POST" and path == "/api/automation/auto-hourly":
-            enabled = data.get("enabled")
-            if type(enabled) is not bool:
-                raise ValueError("enabled must be a boolean")
-            automation = self.server.automation_settings.set_force_auto_hourly(enabled)
-            if self.server.auto_mode_job is not None:
-                self.server.auto_mode_job.settings_changed()
-            return {
-                "automation": automation,
-                "message": (
-                    "Hourly Auto switch enabled"
-                    if enabled
-                    else "Hourly Auto switch disabled"
-                ),
-            }
-
         if self.command == "POST" and len(parts) == 4 and parts[:2] == ["api", "rooms"] and parts[3] == "setpoint":
             room_id = int(parts[2])
             result = self._with_cube(
@@ -597,6 +511,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--cube-port", type=int, default=62910)
     parser.add_argument("--bind", default="127.0.0.1", help="Web bind address")
     parser.add_argument("--port", type=int, default=8765, help="Web server port")
+    parser.add_argument("--disable-auto-mode", action="store_true")
+    parser.add_argument("--auto-mode-interval-hours", type=int, default=1)
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -617,6 +533,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.home_assistant_ingress and args.bind == "0.0.0.0"
     ):
         parser.error("Non-loopback bind addresses are only allowed for Home Assistant ingress")
+    if not 1 <= args.auto_mode_interval_hours <= 24:
+        parser.error("Auto mode interval must be between 1 and 24 hours")
 
     server = None
     message_api_server = None
@@ -630,8 +548,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.cube_port,
             allow_home_assistant_ingress=args.home_assistant_ingress,
             debug=args.debug,
+            auto_mode_enabled=not args.disable_auto_mode,
+            auto_mode_interval_seconds=args.auto_mode_interval_hours * 60 * 60,
         )
-        auto_mode_job = HourlyAutoModeJob(server, server.automation_settings)
+        auto_mode_job = HourlyAutoModeJob(
+            server,
+            enabled=server.auto_mode_enabled,
+            interval_seconds=server.auto_mode_interval_seconds,
+        )
         server.auto_mode_job = auto_mode_job
         if args.home_assistant_ingress:
             message_api_server = CubeMessageAPIServer(

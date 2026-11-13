@@ -1,5 +1,5 @@
 name: "MAX! Cube Manager"
-version: "0.1.11"
+version: "0.1.12"
 slug: "max_cube_manager"
 description: "Manage MAX! Cube thermostats, rooms, and schedules."
 stage: experimental
@@ -14,7 +14,11 @@ panel_title: MAX! Cube
 options:
   cube_port: 62910
   debug: false
+  auto_mode_enabled: true
+  auto_mode_interval_hours: 1
 schema:
   cube_host: str
   cube_port: port
   debug: bool
+  auto_mode_enabled: bool
+  auto_mode_interval_hours: int(1,24)

@@ -19,6 +19,8 @@ class HomeAssistantAppTests(unittest.TestCase):
                 "--port",
                 "8765",
                 "--home-assistant-ingress",
+                "--auto-mode-interval-hours",
+                "1",
             ],
         )
 
@@ -41,6 +43,35 @@ class HomeAssistantAppTests(unittest.TestCase):
     def test_rejects_invalid_debug_option(self):
         with self.assertRaisesRegex(ValueError, "Debug logging"):
             build_web_args({"cube_host": "192.0.2.10", "debug": "yes"})
+
+    def test_auto_mode_defaults_to_enabled_with_one_hour_interval(self):
+        args = build_web_args({"cube_host": "192.0.2.10"})
+
+        self.assertIn("--auto-mode-interval-hours", args)
+        self.assertEqual(args[args.index("--auto-mode-interval-hours") + 1], "1")
+        self.assertNotIn("--disable-auto-mode", args)
+
+    def test_auto_mode_configuration_can_disable_job_and_set_period(self):
+        args = build_web_args({
+            "cube_host": "192.0.2.10",
+            "auto_mode_enabled": False,
+            "auto_mode_interval_hours": 3,
+        })
+
+        self.assertIn("--disable-auto-mode", args)
+        self.assertEqual(args[args.index("--auto-mode-interval-hours") + 1], "3")
+
+    def test_rejects_invalid_auto_mode_options(self):
+        invalid_options = (
+            {"auto_mode_enabled": "yes"},
+            {"auto_mode_interval_hours": 0},
+            {"auto_mode_interval_hours": 25},
+            {"auto_mode_interval_hours": True},
+            {"auto_mode_interval_hours": "2"},
+        )
+        for option in invalid_options:
+            with self.subTest(option=option), self.assertRaises(ValueError):
+                build_web_args({"cube_host": "192.0.2.10", **option})
 
 
 if __name__ == "__main__":

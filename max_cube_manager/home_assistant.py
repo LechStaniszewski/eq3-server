@@ -32,6 +32,18 @@ def build_web_args(options: Dict[str, Any]) -> List[str]:
     if not isinstance(debug, bool):
         raise ValueError("Debug logging must be true or false")
 
+    auto_mode_enabled = options.get("auto_mode_enabled", True)
+    if not isinstance(auto_mode_enabled, bool):
+        raise ValueError("Automatic Auto mode must be true or false")
+
+    auto_mode_interval_hours = options.get("auto_mode_interval_hours", 1)
+    if (
+        isinstance(auto_mode_interval_hours, bool)
+        or not isinstance(auto_mode_interval_hours, int)
+        or not 1 <= auto_mode_interval_hours <= 24
+    ):
+        raise ValueError("Auto mode interval must be between 1 and 24 hours")
+
     args = [
         "--cube-host",
         cube_host.strip(),
@@ -42,9 +54,13 @@ def build_web_args(options: Dict[str, Any]) -> List[str]:
         "--port",
         "8765",
         "--home-assistant-ingress",
+        "--auto-mode-interval-hours",
+        str(auto_mode_interval_hours),
     ]
     if debug:
         args.append("--debug")
+    if not auto_mode_enabled:
+        args.append("--disable-auto-mode")
     return args
 
 
